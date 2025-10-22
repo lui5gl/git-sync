@@ -1,0 +1,51 @@
+use std::fs::OpenOptions;
+use std::io::Write;
+use chrono::Local;
+
+pub struct Logger {
+    log_file: String,
+}
+
+impl Logger {
+    pub fn new(log_file: String) -> Self {
+        Logger { log_file }
+    }
+
+    pub fn log(&self, message: &str) {
+        let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
+        let log_entry = format!("[{}] {}\n", timestamp, message);
+
+        // Print to console
+        print!("{}", message);
+
+        // Write to log file
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.log_file)
+        {
+            let _ = file.write_all(log_entry.as_bytes());
+        }
+    }
+
+    pub fn log_line(&self, message: &str) {
+        self.log(&format!("{}\n", message));
+    }
+
+    pub fn log_error(&self, message: &str) {
+        let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
+        let log_entry = format!("[{}] ERROR: {}\n", timestamp, message);
+
+        // Print to console
+        eprint!("ERROR: {}\n", message);
+
+        // Write to log file
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.log_file)
+        {
+            let _ = file.write_all(log_entry.as_bytes());
+        }
+    }
+}

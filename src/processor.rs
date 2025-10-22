@@ -1,83 +1,101 @@
 use crate::git::GitRepo;
+use crate::logger::Logger;
 use std::path::Path;
 
-pub struct RepoProcessor;
+pub struct RepoProcessor<'a> {
+    logger: &'a Logger,
+}
 
-impl RepoProcessor {
-    pub fn process_all(repo_paths: Vec<String>) {
+impl<'a> RepoProcessor<'a> {
+    pub fn new(logger: &'a Logger) -> Self {
+        RepoProcessor { logger }
+    }
+
+    pub fn process_all(&self, repo_paths: Vec<String>) -> Result<(), String> {
         if repo_paths.is_empty() {
-            println!("No repositories found in config file.");
-            println!("Please add repository paths (one per line).");
-            return;
+            self.logger.log_line("No repositories found in config file.");
+            self.logger.log_line("Please add repository paths (one per line).");
+            return Err("No repositories configured".to_string());
         }
 
-        println!("Found {} repository/repositories to check\n", repo_paths.len());
+        self.logger.log_line(&format!("Found {} repository/repositories to check\n", repo_paths.len()));
 
         for repo_path in repo_paths {
-            Self::process_single(&repo_path);
-            println!();
+            self.process_single(&repo_path)?;
+            self.logger.log("\n");
         }
 
-        println!("All repositories processed.");
+        self.logger.log_line("All repositories processed.");
+        Ok(())
     }
 
-    fn process_single(repo_path: &str) {
-        println!("==========================================");
-        println!("Processing: {}", repo_path);
-        println!("==========================================");
+    fn process_single(&self, repo_path: &str) -> Result<(), String> {
+        self.logger.log_line("==========================================");
+        self.logger.log_line(&format!("Processing: {}", repo_path));
+        self.logger.log_line("==========================================");
 
-        if !Self::validate_repo(repo_path) {
-            return;
-        }
-
-        Self::check_and_pull(repo_path);
+        self.validate_repo(repo_path)?;
+        self.check_and_pull(repo_path)?;
+        
+        Ok(())
     }
 
-    fn validate_repo(repo_path: &str) -> bool {
+    fn validate_repo(&self, repo_path: &str) -> Result<(), String> {
         if !Path::new(repo_path).exists() {
-            println!("❌ Path does not exist: {}", repo_path);
-            return false;
+            let msg = format!("❌ Path does not exist: {}", repo_path);
+            self.logger.log_error(&msg);
+            return Err(msg);
         }
 
         if !Path::new(&format!("{}/.git", repo_path)).exists() {
-            println!("❌ Not a git repository: {}", repo_path);
-            return false;
+            let msg = format!("❌ Not a git repository: {}", repo_path);
+            self.logger.log_error(&msg);
+            return Err(msg);
         }
 
-        true
+        Ok(())
     }
 
-    fn check_and_pull(repo_path: &str) {
+    fn check_and_pull(&self, repo_path: &str) -> Result<(), String> {
         let repo = GitRepo::new(repo_path.to_string());
 
-        println!("Checking remote status...");
+        self.logger.log_line("Checking remote status...");
 
         // Fetch remote changes
         if let Err(e) = repo.fetch() {
-            println!("❌ Failed to fetch: {}", e);
-            return;
+            let msg = format!("Failed to fetch: {}", e);
+            self.logger.log_error(&msg);
+            return Err(msg);
         }
 
         // Get default branch
         let branch = repo.get_default_branch();
-        println!("Using branch: {}", branch);
+        self.logger.log_line(&format!("Using branch: {}", branch));
 
         // Check if behind
         match repo.count_commits_behind(&branch) {
             Ok(0) => {
-                println!("✅ Already up to date.");
+                self.logger.log_line("✅ Already up to date.");
             }
             Ok(count) => {
-                println!("Remote has {} new commit(s). Pulling changes...", count);
+                self.logger.log_line(&format!("Remote has {} new commit(s). Pulling changes...", count));
 
                 match repo.pull(&branch) {
-                    Ok(output) => println!("✅ {}", output.trim()),
-                    Err(e) => println!("❌ Failed to pull: {}", e),
+                    Ok(output) => self.logger.log_line(&format!("✅ {}", output.trim())),
+                    Err(e) => {
+                        let msg = format!("Failed to pull: {}", e);
+                        self.logger.log_error(&msg);
+                        return Err(msg);
+                    }
                 }
             }
             Err(e) => {
-                println!("❌ Failed to check status: {}", e);
+                let msg = format!("Failed to check status: {}", e);
+                self.logger.log_error(&msg);
+                return Err(msg);
             }
         }
+
+        Ok(())
     }
 }

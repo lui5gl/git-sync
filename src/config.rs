@@ -5,17 +5,20 @@ use std::path::Path;
 pub struct Config {
     pub config_dir: String,
     pub config_file: String,
+    pub log_file: String,
 }
 
 impl Config {
     pub fn new() -> Self {
         let home_dir = env::var("HOME").expect("Could not get HOME directory");
-        let config_dir = format!("{}/.config/gitlab-cd-ci", home_dir);
+        let config_dir = format!("{}/.gitlab-cd-ci", home_dir);
         let config_file = format!("{}/repos.txt", config_dir);
+        let log_file = format!("{}/.log", config_dir);
 
         Config {
             config_dir,
             config_file,
+            log_file,
         }
     }
 
