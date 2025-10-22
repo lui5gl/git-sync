@@ -4,11 +4,12 @@ use std::path::Path;
 
 pub struct RepoProcessor<'a> {
     logger: &'a Logger,
+    verbose: bool,
 }
 
 impl<'a> RepoProcessor<'a> {
-    pub fn new(logger: &'a Logger) -> Self {
-        RepoProcessor { logger }
+    pub fn new(logger: &'a Logger, verbose: bool) -> Self {
+        RepoProcessor { logger, verbose }
     }
 
     pub fn process_all(&self, repo_paths: Vec<String>) -> Result<(), String> {
@@ -18,21 +19,29 @@ impl<'a> RepoProcessor<'a> {
             return Err("No repositories configured".to_string());
         }
 
-        self.logger.log_line(&format!("Found {} repository/repositories to check\n", repo_paths.len()));
+        if self.verbose {
+            self.logger.log_line(&format!("Found {} repository/repositories to check\n", repo_paths.len()));
+        }
 
         for repo_path in repo_paths {
             self.process_single(&repo_path)?;
-            self.logger.log("\n");
+            if self.verbose {
+                self.logger.log("\n");
+            }
         }
 
-        self.logger.log_line("All repositories processed.");
+        if self.verbose {
+            self.logger.log_line("All repositories processed.");
+        }
         Ok(())
     }
 
     fn process_single(&self, repo_path: &str) -> Result<(), String> {
-        self.logger.log_line("==========================================");
-        self.logger.log_line(&format!("Processing: {}", repo_path));
-        self.logger.log_line("==========================================");
+        if self.verbose {
+            self.logger.log_line("==========================================");
+            self.logger.log_line(&format!("Processing: {}", repo_path));
+            self.logger.log_line("==========================================");
+        }
 
         self.validate_repo(repo_path)?;
         self.check_and_pull(repo_path)?;
@@ -59,7 +68,9 @@ impl<'a> RepoProcessor<'a> {
     fn check_and_pull(&self, repo_path: &str) -> Result<(), String> {
         let repo = GitRepo::new(repo_path.to_string());
 
-        self.logger.log_line("Checking remote status...");
+        if self.verbose {
+            self.logger.log_line("Checking remote status...");
+        }
 
         // Fetch remote changes
         if let Err(e) = repo.fetch() {
@@ -70,18 +81,28 @@ impl<'a> RepoProcessor<'a> {
 
         // Get default branch
         let branch = repo.get_default_branch();
-        self.logger.log_line(&format!("Using branch: {}", branch));
+        if self.verbose {
+            self.logger.log_line(&format!("Using branch: {}", branch));
+        }
 
         // Check if behind
         match repo.count_commits_behind(&branch) {
             Ok(0) => {
-                self.logger.log_line("✅ Already up to date.");
+                if self.verbose {
+                    self.logger.log_line("✅ Already up to date.");
+                }
             }
             Ok(count) => {
-                self.logger.log_line(&format!("Remote has {} new commit(s). Pulling changes...", count));
+                if self.verbose {
+                    self.logger.log_line(&format!("Remote has {} new commit(s). Pulling changes...", count));
+                }
 
                 match repo.pull(&branch) {
-                    Ok(output) => self.logger.log_line(&format!("✅ {}", output.trim())),
+                    Ok(output) => {
+                        if self.verbose {
+                            self.logger.log_line(&format!("✅ {}", output.trim()));
+                        }
+                    }
                     Err(e) => {
                         let msg = format!("Failed to pull: {}", e);
                         self.logger.log_error(&msg);

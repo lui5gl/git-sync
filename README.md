@@ -109,6 +109,18 @@ El programa ejecutará un loop infinito:
 
 **Si hay algún error y `stop_on_error=true`, el programa se detiene** (exit code 1).
 
+### Modo quiet (silencioso)
+Ideal para ejecutar en segundo plano con mínimo consumo de recursos:
+```bash
+# Ejecutar en background con salida mínima
+git-sync --quiet &
+
+# O con nohup para mantenerlo corriendo después de cerrar sesión
+nohup git-sync --quiet > /dev/null 2>&1 &
+```
+
+El modo quiet (`-q` o `--quiet`) desactiva toda la salida verbose, manteniendo solo los errores críticos.
+
 ### Modo único (sin loop)
 Edita `~/.config/git-sync/config.toml` y establece:
 ```toml

@@ -26,6 +26,7 @@ fn print_help() {
     println!("\nOPTIONS:");
     println!("    -h, --help       Print help information");
     println!("    -v, --version    Print version information");
+    println!("    -q, --quiet      Run in quiet mode (minimal output, overrides config)");
     println!("\nCONFIGURATION:");
     println!("    Config file: ~/.config/git-sync/config.toml");
     println!("    Repos file:  ~/.config/git-sync/repositories.txt");
@@ -36,6 +37,7 @@ fn print_help() {
 fn main() {
     // Parse command line arguments
     let args: Vec<String> = env::args().collect();
+    let mut quiet_mode = false;
     
     if args.len() > 1 {
         match args[1].as_str() {
@@ -46,6 +48,9 @@ fn main() {
             "-h" | "--help" => {
                 print_help();
                 return;
+            }
+            "-q" | "--quiet" => {
+                quiet_mode = true;
             }
             _ => {
                 eprintln!("Unknown option: {}", args[1]);
@@ -65,16 +70,24 @@ fn main() {
 
     // Load or create settings
     let mut settings = Settings::load_or_create(&config.settings_file);
+    
+    // Override verbose setting if quiet mode is enabled
+    if quiet_mode {
+        settings.verbose = false;
+    }
+    
     let logger = Logger::new(config.log_file.clone());
     
-    logger.log_line("=================================================");
-    logger.log_line("Git Sync - Repository synchronization daemon");
-    logger.log_line("=================================================");
-    logger.log_line(&format!("⚙️  Sync interval: {} seconds", settings.sync_interval));
-    logger.log_line(&format!("⚙️  Stop on error: {}", settings.stop_on_error));
-    logger.log_line(&format!("⚙️  Git timeout: {} seconds", settings.git_timeout));
-    logger.log_line(&format!("⚙️  Max retries: {}", settings.max_retries));
-    logger.log_line(&format!("⚙️  Continuous mode: {}\n", settings.continuous_mode));
+    if settings.verbose {
+        logger.log_line("=================================================");
+        logger.log_line("Git Sync - Repository synchronization daemon");
+        logger.log_line("=================================================");
+        logger.log_line(&format!("⚙️  Sync interval: {} seconds", settings.sync_interval));
+        logger.log_line(&format!("⚙️  Stop on error: {}", settings.stop_on_error));
+        logger.log_line(&format!("⚙️  Git timeout: {} seconds", settings.git_timeout));
+        logger.log_line(&format!("⚙️  Max retries: {}", settings.max_retries));
+        logger.log_line(&format!("⚙️  Continuous mode: {}\n", settings.continuous_mode));
+    }
 
     if !settings.continuous_mode {
         // Ejecutar una sola vez
@@ -86,7 +99,9 @@ fn main() {
     loop {
         run_sync_cycle(&config, &logger, &settings);
         
-        logger.log_line(&format!("\n⏳ Waiting {} seconds before next cycle...\n", settings.sync_interval));
+        if settings.verbose {
+            logger.log_line(&format!("\n⏳ Waiting {} seconds before next cycle...\n", settings.sync_interval));
+        }
         thread::sleep(Duration::from_secs(settings.sync_interval));
         
         // Recargar configuración en cada ciclo (permite cambios en caliente)
@@ -96,11 +111,13 @@ fn main() {
 
 fn run_sync_cycle(config: &Config, logger: &Logger, settings: &Settings) {
     let repos = config.read_repos();
-    let processor = RepoProcessor::new(logger);
+    let processor = RepoProcessor::new(logger, settings.verbose);
     
     match processor.process_all(repos) {
         Ok(_) => {
-            logger.log_line("\n✅ Cycle completed successfully.");
+            if settings.verbose {
+                logger.log_line("\n✅ Cycle completed successfully.");
+            }
         }
         Err(e) => {
             logger.log_error(&format!("Error: {}", e));
