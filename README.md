@@ -1,21 +1,23 @@
-# GitLab CD/CI - Repository Sync Daemon
+# Git Sync - Repository Sync Daemon
 
 Un daemon automatizado para mantener múltiples repositorios Git sincronizados con sus remotos.
 
 ## Características
 
 - ✅ Sincronización automática de múltiples repositorios
-- ✅ Loop continuo con espera de 60 segundos entre ciclos
+- ✅ Configuración flexible con `config.toml`
+- ✅ Loop continuo o ejecución única
 - ✅ Detección automática de rama por defecto (main/master)
 - ✅ Logging completo con timestamps en archivo `.log`
 - ✅ **Se detiene ante cualquier error** (ideal para cron jobs)
-- ✅ Configuración simple en `~/.gitlab-cd-ci/`
+- ✅ Configuración en `~/.config/git-sync/`
+- ✅ Recarga de configuración en caliente
 
 ## Instalación
 
 ```bash
 cargo build --release
-sudo cp target/release/gitlab-cd-ci /usr/local/bin/
+sudo cp target/release/git-sync /usr/local/bin/
 ```
 
 ## Configuración
@@ -23,12 +25,35 @@ sudo cp target/release/gitlab-cd-ci /usr/local/bin/
 Al ejecutar por primera vez, se creará automáticamente:
 
 ```
-~/.gitlab-cd-ci/
+~/.config/git-sync/
+├── config.toml  # Configuración del programa
 ├── repos.txt    # Lista de repositorios
 └── .log         # Archivo de logs
 ```
 
-Edita `~/.gitlab-cd-ci/repos.txt` y añade las rutas absolutas de tus repositorios:
+### config.toml
+
+```toml
+# Tiempo de espera entre ciclos de sincronización (en segundos)
+sync_interval = 60
+
+# Detener el programa si hay algún error
+stop_on_error = true
+
+# Timeout para operaciones git (en segundos)
+git_timeout = 300
+
+# Número máximo de reintentos en caso de fallo temporal
+max_retries = 0
+
+# Mostrar output detallado
+verbose = true
+
+# Ejecutar en modo continuo (loop infinito)
+continuous_mode = true
+```
+
+Edita `~/.config/git-sync/repos.txt` y añade las rutas absolutas de tus repositorios:
 
 ```
 # Repositorios a sincronizar
@@ -41,35 +66,46 @@ Edita `~/.gitlab-cd-ci/repos.txt` y añade las rutas absolutas de tus repositori
 
 ### Modo daemon (continuo)
 ```bash
-gitlab-cd-ci
+git-sync
 ```
 
 El programa ejecutará un loop infinito:
 1. Revisa todos los repositorios
 2. Hace fetch y pull si hay cambios
-3. Espera 60 segundos
+3. Espera el tiempo configurado en `sync_interval`
 4. Repite
 
-**Si hay algún error, el programa se detiene** (exit code 1).
+**Si hay algún error y `stop_on_error=true`, el programa se detiene** (exit code 1).
+
+### Modo único (sin loop)
+Edita `~/.config/git-sync/config.toml` y establece:
+```toml
+continuous_mode = false
+```
+
+Luego ejecuta:
+```bash
+git-sync
+```
 
 ### Con cron
 ```bash
 # Cada 5 minutos
-*/5 * * * * /usr/local/bin/gitlab-cd-ci >> /tmp/gitlab-cd-ci-cron.log 2>&1
+*/5 * * * * /usr/local/bin/git-sync >> /tmp/git-sync-cron.log 2>&1
 ```
 
 Si un ciclo falla, el programa se detiene y cron no lo volverá a ejecutar hasta el siguiente intervalo.
 
 ### Logs
 
-Los logs se guardan automáticamente en `~/.gitlab-cd-ci/.log`:
+Los logs se guardan automáticamente en `~/.config/git-sync/.log`:
 
 ```
-[2025-10-21 14:30:00] GitLab CD/CI - Starting repository sync daemon
+[2025-10-21 14:30:00] Git Sync - Repository synchronization daemon
 [2025-10-21 14:30:00] Found 3 repository/repositories to check
 [2025-10-21 14:30:01] Processing: /home/user/projects/repo1
 [2025-10-21 14:30:01] ✅ Already up to date.
-[2025-10-21 14:30:02] ✅ Cycle completed successfully. Waiting 60 seconds...
+[2025-10-21 14:30:02] ✅ Cycle completed successfully.
 ```
 
 ## Estructura del código

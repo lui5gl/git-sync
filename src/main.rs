@@ -25,7 +25,7 @@ fn main() {
     let logger = Logger::new(config.log_file.clone());
     
     logger.log_line("=================================================");
-    logger.log_line("GitLab CD/CI - Starting repository sync daemon");
+    logger.log_line("Git Sync - Repository synchronization daemon");
     logger.log_line("=================================================");
     logger.log_line(&format!("⚙️  Sync interval: {} seconds", settings.sync_interval));
     logger.log_line(&format!("⚙️  Stop on error: {}", settings.stop_on_error));
