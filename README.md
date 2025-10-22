@@ -30,6 +30,28 @@ cargo build --release
 sudo cp target/release/git-sync /usr/local/bin/
 ```
 
+O descarga el binario compilado desde [Releases](https://github.com/lui5gl/git-sync/releases):
+
+```bash
+# Linux
+wget https://github.com/lui5gl/git-sync/releases/latest/download/git-sync
+chmod +x git-sync
+sudo mv git-sync /usr/local/bin/
+
+# Verificar instalación
+git-sync --version
+```
+
+## Desinstalación
+
+```bash
+# Eliminar el binario
+sudo rm /usr/local/bin/git-sync
+
+# Eliminar configuración y logs (opcional)
+rm -rf ~/.config/git-sync
+```
+
 ## Configuración
 
 Al ejecutar por primera vez, se creará automáticamente:
