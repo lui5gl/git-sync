@@ -53,16 +53,22 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     
+    permissions:
+      contents: write
+    
     steps:
     - name: Download artifacts
       uses: actions/download-artifact@v4
       with:
         path: artifacts
 
+    - name: List downloaded artifacts
+      run: ls -R artifacts/
+
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        files: artifacts/*/*
+        files: artifacts/**/*
         draft: false
         prerelease: false
       env:
