@@ -8,10 +8,53 @@ use config::Config;
 use logger::Logger;
 use processor::RepoProcessor;
 use settings::Settings;
+use std::env;
 use std::thread;
 use std::time::Duration;
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+fn print_version() {
+    println!("git-sync v{}", VERSION);
+}
+
+fn print_help() {
+    println!("git-sync v{}", VERSION);
+    println!("\nA daemon to automatically synchronize multiple Git repositories.");
+    println!("\nUSAGE:");
+    println!("    git-sync [OPTIONS]");
+    println!("\nOPTIONS:");
+    println!("    -h, --help       Print help information");
+    println!("    -v, --version    Print version information");
+    println!("\nCONFIGURATION:");
+    println!("    Config file: ~/.config/git-sync/config.toml");
+    println!("    Repos file:  ~/.config/git-sync/repositories.txt");
+    println!("    Log file:    ~/.config/git-sync/.log");
+    println!("\nFor more information, visit: https://github.com/lui5gl/git-sync");
+}
+
 fn main() {
+    // Parse command line arguments
+    let args: Vec<String> = env::args().collect();
+    
+    if args.len() > 1 {
+        match args[1].as_str() {
+            "-v" | "--version" => {
+                print_version();
+                return;
+            }
+            "-h" | "--help" => {
+                print_help();
+                return;
+            }
+            _ => {
+                eprintln!("Unknown option: {}", args[1]);
+                eprintln!("Use --help for usage information");
+                std::process::exit(1);
+            }
+        }
+    }
+
     let config = Config::new();
     let repos_created = config.ensure_exists();
 
