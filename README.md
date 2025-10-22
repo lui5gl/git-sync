@@ -36,9 +36,9 @@ Al ejecutar por primera vez, se creará automáticamente:
 
 ```
 ~/.config/git-sync/
-├── config.toml  # Configuración del programa
-├── repos.txt    # Lista de repositorios
-└── .log         # Archivo de logs
+├── config.toml        # Configuración del programa
+├── repositories.txt   # Lista de repositorios
+└── .log               # Archivo de logs
 ```
 
 ### config.toml
@@ -63,7 +63,7 @@ verbose = true
 continuous_mode = true
 ```
 
-Edita `~/.config/git-sync/repos.txt` y añade las rutas absolutas de tus repositorios:
+Edita `~/.config/git-sync/repositories.txt` y añade las rutas absolutas de tus repositorios:
 
 ```
 # Repositorios a sincronizar
@@ -123,7 +123,7 @@ Los logs se guardan automáticamente en `~/.config/git-sync/.log`:
 ```
 src/
 ├── main.rs        # Loop principal y manejo de errores
-├── config.rs      # Configuración y lectura de repos.txt
+├── config.rs      # Configuración y lectura de repositories.txt
 ├── git.rs         # Operaciones Git (fetch, pull, branches)
 ├── logger.rs      # Sistema de logging con timestamps
 └── processor.rs   # Procesamiento de repositorios

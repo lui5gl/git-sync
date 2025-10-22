@@ -13,7 +13,7 @@ impl Config {
     pub fn new() -> Self {
         let home_dir = env::var("HOME").expect("Could not get HOME directory");
         let config_dir = format!("{}/.config/git-sync", home_dir);
-        let repos_file = format!("{}/repos.txt", config_dir);
+        let repos_file = format!("{}/repositories.txt", config_dir);
         let settings_file = format!("{}/config.toml", config_dir);
         let log_file = format!("{}/.log", config_dir);
 
