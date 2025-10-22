@@ -2,6 +2,16 @@
 
 Un daemon automatizado para mantener múltiples repositorios Git sincronizados con sus remotos.
 
+## ¿Por qué este proyecto?
+
+Este proyecto surgió de la necesidad de tener una solución de sincronización automática de repositorios cuando **no es posible usar CI/CD de GitLab** debido a:
+
+- **Limitaciones de versión**: Versiones antiguas de GitLab que no soportan las funciones modernas de CI/CD
+- **Problemas de configuración**: Restricciones en la infraestructura o configuración del servidor GitLab
+- **Ambientes restringidos**: Entornos donde no se puede configurar o activar GitLab CI/CD
+
+En lugar de depender de la infraestructura de GitLab, `git-sync` proporciona una solución independiente y ligera que se ejecuta localmente, permitiendo mantener sincronizados múltiples repositorios de forma automática sin necesidad de configuraciones complejas de servidor.
+
 ## Características
 
 - ✅ Sincronización automática de múltiples repositorios
