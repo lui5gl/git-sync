@@ -42,6 +42,24 @@ sudo mv git-sync /usr/local/bin/
 git-sync --version
 ```
 
+### Compatibilidad con distribuciones antiguas (CentOS 7 y anteriores)
+
+Si al ejecutar el binario precompilado aparece un error de carga relacionado con `GLIBC`, es porque el ejecutable fue enlazado
+dinámicamente contra una versión más reciente de la biblioteca estándar de GNU. Las versiones antiguas de CentOS envían una
+versión muy desactualizada de `glibc`, por lo que el binario no puede iniciarse. Para estos entornos hay **un artefacto
+precompilado adicional** en la sección de Releases llamado `git-sync-linux-amd64-musl`, que está enlazado estáticamente con
+`musl` y no depende de `glibc`. Si prefieres compilarlo tú mismo, ejecuta:
+
+```bash
+sudo dnf install musl-gcc # o yum install musl-gcc en CentOS antiguos
+rustup target add x86_64-unknown-linux-musl
+cargo build --release --target x86_64-unknown-linux-musl
+sudo cp target/x86_64-unknown-linux-musl/release/git-sync /usr/local/bin/
+```
+
+Al usar `musl` el binario resultante no depende de la versión de `glibc` del sistema y se ejecutará correctamente en CentOS
+antiguos.
+
 ## Desinstalación
 
 ```bash
