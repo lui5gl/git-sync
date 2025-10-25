@@ -38,7 +38,7 @@ impl Config {
 
         if repos_created {
             println!(
-                "\n📝 Please add repository paths to {} and restart the service.\n",
+                "\nAgregue las rutas de los repositorios en {} y reinicie el servicio.\n",
                 self.repos_file
             );
         }
@@ -49,26 +49,26 @@ impl Config {
     fn ensure_directory(&self, path: &str, mode: u32) -> Result<(), String> {
         if !Path::new(path).exists() {
             fs::create_dir_all(path)
-                .map_err(|e| format!("Failed to create directory {}: {}", path, e))?;
+                .map_err(|e| format!("No se pudo crear el directorio {}: {}", path, e))?;
             let permissions = fs::Permissions::from_mode(mode);
             fs::set_permissions(path, permissions)
-                .map_err(|e| format!("Failed to set permissions on {}: {}", path, e))?;
-            println!("✅ Created directory: {}", path);
+                .map_err(|e| format!("No se pudieron asignar permisos a {}: {}", path, e))?;
+            println!("Directorio creado: {}", path);
         }
         Ok(())
     }
 
     fn ensure_repos_file(&self) -> Result<bool, String> {
         if !Path::new(&self.repos_file).exists() {
-            let default_content = "# Add absolute paths to your git repositories, one per line\n\
-                                   # Example:\n\
-                                   # /home/git/repos/my-repo\n";
+            let default_content = "# Añada rutas absolutas de repositorios Git, una por línea\n\
+                                   # Ejemplo:\n\
+                                   # /home/git/repos/mi-repo\n";
             fs::write(&self.repos_file, default_content)
-                .map_err(|e| format!("Failed to create repositories file {}: {}", self.repos_file, e))?;
+                .map_err(|e| format!("No se pudo crear el archivo de repositorios {}: {}", self.repos_file, e))?;
             let permissions = fs::Permissions::from_mode(0o644);
             fs::set_permissions(&self.repos_file, permissions)
-                .map_err(|e| format!("Failed to set permissions on {}: {}", self.repos_file, e))?;
-            println!("✅ Created repositories file: {}", self.repos_file);
+                .map_err(|e| format!("No se pudieron asignar permisos a {}: {}", self.repos_file, e))?;
+            println!("Archivo de repositorios creado: {}", self.repos_file);
             return Ok(true);
         }
 
@@ -79,13 +79,13 @@ impl Config {
         if !Path::new(&self.settings_file).exists() {
             let default_settings = Settings::default();
             let toml_string = toml::to_string_pretty(&default_settings)
-                .map_err(|e| format!("Failed to serialize default settings: {}", e))?;
+                .map_err(|e| format!("No se pudo serializar la configuración predeterminada: {}", e))?;
             fs::write(&self.settings_file, toml_string)
-                .map_err(|e| format!("Failed to create config file {}: {}", self.settings_file, e))?;
+                .map_err(|e| format!("No se pudo crear el archivo de configuración {}: {}", self.settings_file, e))?;
             let permissions = fs::Permissions::from_mode(0o644);
             fs::set_permissions(&self.settings_file, permissions)
-                .map_err(|e| format!("Failed to set permissions on {}: {}", self.settings_file, e))?;
-            println!("✅ Created config file: {}", self.settings_file);
+                .map_err(|e| format!("No se pudieron asignar permisos a {}: {}", self.settings_file, e))?;
+            println!("Archivo de configuración creado: {}", self.settings_file);
         }
 
         Ok(())
@@ -94,11 +94,11 @@ impl Config {
     fn ensure_log_file(&self) -> Result<(), String> {
         if !Path::new(&self.log_file).exists() {
             File::create(&self.log_file)
-                .map_err(|e| format!("Failed to create log file {}: {}", self.log_file, e))?;
+                .map_err(|e| format!("No se pudo crear el archivo de registro {}: {}", self.log_file, e))?;
             let permissions = fs::Permissions::from_mode(0o644);
             fs::set_permissions(&self.log_file, permissions)
-                .map_err(|e| format!("Failed to set permissions on {}: {}", self.log_file, e))?;
-            println!("✅ Created log file: {}", self.log_file);
+                .map_err(|e| format!("No se pudieron asignar permisos a {}: {}", self.log_file, e))?;
+            println!("Archivo de registro creado: {}", self.log_file);
         }
 
         Ok(())
@@ -106,7 +106,7 @@ impl Config {
 
     pub fn read_repos(&self) -> Vec<String> {
         let contents = fs::read_to_string(&self.repos_file)
-            .unwrap_or_else(|e| panic!("Failed to read repositories file {}: {}", self.repos_file, e));
+            .unwrap_or_else(|e| panic!("No se pudo leer el archivo de repositorios {}: {}", self.repos_file, e));
 
         contents
             .lines()
@@ -117,8 +117,8 @@ impl Config {
     }
 
     pub fn write_repos(&self, repos: &[String]) -> Result<(), String> {
-        let mut content = String::from("# Repository list managed by git-sync\n");
-        content.push_str("# One absolute path per line\n");
+        let mut content = String::from("# Lista de repositorios administrada por git-sync\n");
+        content.push_str("# Especifique una ruta absoluta por línea\n");
         if !repos.is_empty() {
             for repo in repos {
                 content.push_str(repo.trim());
@@ -127,11 +127,11 @@ impl Config {
         }
 
         fs::write(&self.repos_file, content)
-            .map_err(|e| format!("Failed to write repositories file {}: {}", self.repos_file, e))?;
+            .map_err(|e| format!("No se pudo escribir en el archivo de repositorios {}: {}", self.repos_file, e))?;
 
         let permissions = fs::Permissions::from_mode(0o644);
         fs::set_permissions(&self.repos_file, permissions)
-            .map_err(|e| format!("Failed to set permissions on {}: {}", self.repos_file, e))?;
+            .map_err(|e| format!("No se pudieron asignar permisos a {}: {}", self.repos_file, e))?;
 
         Ok(())
     }

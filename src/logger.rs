@@ -15,10 +15,10 @@ impl Logger {
         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
         let log_entry = format!("[{}] {}\n", timestamp, message);
 
-        // Print to console
+        // Mostrar en consola
         print!("{}", message);
 
-        // Write to log file
+        // Escribir en el archivo de registro
         if let Ok(mut file) = OpenOptions::new()
             .create(true)
             .append(true)
@@ -36,10 +36,10 @@ impl Logger {
         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
         let log_entry = format!("[{}] ERROR: {}\n", timestamp, message);
 
-        // Print to console
+        // Mostrar en consola
         eprint!("ERROR: {}\n", message);
 
-        // Write to log file
+        // Escribir en el archivo de registro
         if let Ok(mut file) = OpenOptions::new()
             .create(true)
             .append(true)

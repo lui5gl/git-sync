@@ -14,7 +14,7 @@ impl GitRepo {
             .current_dir(&self.path)
             .arg("fetch")
             .output()
-            .map_err(|e| format!("Failed to execute git fetch: {}", e))?;
+            .map_err(|e| format!("No se pudo ejecutar `git fetch`: {}", e))?;
 
         if !output.status.success() {
             return Err(String::from_utf8_lossy(&output.stderr).to_string());
@@ -24,7 +24,7 @@ impl GitRepo {
     }
 
     pub fn get_default_branch(&self) -> String {
-        // Try to detect the default branch
+        // Intentar detectar la rama predeterminada
         let branch_output = Command::new("git")
             .current_dir(&self.path)
             .args(&["symbolic-ref", "refs/remotes/origin/HEAD"])
@@ -40,7 +40,7 @@ impl GitRepo {
             }
         }
 
-        // Fallback: check which branch exists
+        // Alternativa: verificar qué rama está disponible
         let main_exists = Command::new("git")
             .current_dir(&self.path)
             .args(&["rev-parse", "--verify", "origin/main"])
@@ -60,7 +60,7 @@ impl GitRepo {
             .current_dir(&self.path)
             .args(&["rev-list", "--count", &format!("HEAD..origin/{}", branch)])
             .output()
-            .map_err(|e| format!("Failed to check git status: {}", e))?;
+            .map_err(|e| format!("No se pudo comprobar el estado de Git: {}", e))?;
 
         let count = String::from_utf8_lossy(&output.stdout)
             .trim()
@@ -75,7 +75,7 @@ impl GitRepo {
             .current_dir(&self.path)
             .args(&["pull", "origin", branch])
             .output()
-            .map_err(|e| format!("Failed to execute git pull: {}", e))?;
+            .map_err(|e| format!("No se pudo ejecutar `git pull`: {}", e))?;
 
         if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).to_string())

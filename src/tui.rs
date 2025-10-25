@@ -18,23 +18,26 @@ enum InputMode {
 }
 
 pub fn run_repo_manager(config: &Config) -> Result<(), String> {
-    enable_raw_mode().map_err(|e| format!("Failed to enable raw mode: {}", e))?;
+    enable_raw_mode().map_err(|e| format!("No se pudo activar el modo raw del terminal: {}", e))?;
     let mut stdout = stdout();
     stdout
         .execute(EnterAlternateScreen)
-        .map_err(|e| format!("Failed to enter alternate screen: {}", e))?;
+        .map_err(|e| format!("No se pudo abrir la pantalla alternativa: {}", e))?;
 
     let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend).map_err(|e| format!("Failed to initialize terminal: {}", e))?;
+    let mut terminal =
+        Terminal::new(backend).map_err(|e| format!("No se pudo inicializar el terminal: {}", e))?;
 
     let result = run_loop(&mut terminal, config);
 
-    disable_raw_mode().map_err(|e| format!("Failed to disable raw mode: {}", e))?;
+    disable_raw_mode().map_err(|e| format!("No se pudo desactivar el modo raw del terminal: {}", e))?;
     terminal
         .backend_mut()
         .execute(LeaveAlternateScreen)
-        .map_err(|e| format!("Failed to leave alternate screen: {}", e))?;
-    terminal.show_cursor().map_err(|e| format!("Failed to show cursor: {}", e))?;
+        .map_err(|e| format!("No se pudo restaurar la pantalla original: {}", e))?;
+    terminal
+        .show_cursor()
+        .map_err(|e| format!("No se pudo restaurar el cursor del terminal: {}", e))?;
 
     result
 }
@@ -176,9 +179,9 @@ fn run_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>, config: &Config) 
     loop {
         terminal
             .draw(|frame| draw_ui(frame, &mut manager))
-            .map_err(|e| format!("Failed to render UI: {}", e))?;
+            .map_err(|e| format!("No se pudo renderizar la interfaz: {}", e))?;
 
-        match event::read().map_err(|e| format!("Failed to read input event: {}", e))? {
+        match event::read().map_err(|e| format!("No se pudo leer el evento de entrada: {}", e))? {
             Event::Key(KeyEvent { code, modifiers, .. }) => {
                 if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
                     return Ok(());
