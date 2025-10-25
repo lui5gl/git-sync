@@ -2,11 +2,13 @@ mod config;
 mod git;
 mod logger;
 mod processor;
+mod service;
 mod settings;
 
 use config::Config;
 use logger::Logger;
 use processor::RepoProcessor;
+use service::{install_service, uninstall_service};
 use settings::Settings;
 use std::env;
 use std::thread;
@@ -20,13 +22,15 @@ fn print_version() {
 
 fn print_help() {
     println!("git-sync v{}", VERSION);
-    println!("\nA daemon to automatically synchronize multiple Git repositories.");
+    println!("\nGit repository synchronization service.");
     println!("\nUSAGE:");
-    println!("    git-sync [OPTIONS]");
-    println!("\nOPTIONS:");
-    println!("    -h, --help       Print help information");
-    println!("    -v, --version    Print version information");
-    println!("    -q, --quiet      Run in quiet mode (minimal output, overrides config)");
+    println!("    git-sync          # Ejecuta el daemon (usado por systemd)");
+    println!("    git-sync <COMMAND>");
+    println!("\nCOMMANDS:");
+    println!("    install-service    Install and start the git-sync systemd service");
+    println!("    uninstall-service  Remove the git-sync systemd service");
+    println!("    -h, --help         Print help information");
+    println!("    -v, --version      Print version information");
     println!("\nCONFIGURATION:");
     println!("    Config file: ~/.config/git-sync/config.toml");
     println!("    Repos file:  ~/.config/git-sync/repositories.txt");
@@ -37,10 +41,9 @@ fn print_help() {
 fn main() {
     // Parse command line arguments
     let args: Vec<String> = env::args().collect();
-    let mut quiet_mode = false;
-    
-    if args.len() > 1 {
-        match args[1].as_str() {
+
+    if let Some(command) = args.get(1).map(|s| s.as_str()) {
+        match command {
             "-v" | "--version" => {
                 print_version();
                 return;
@@ -49,11 +52,22 @@ fn main() {
                 print_help();
                 return;
             }
-            "-q" | "--quiet" => {
-                quiet_mode = true;
+            "install-service" => {
+                if let Err(err) = install_service() {
+                    eprintln!("Failed to install service: {}", err);
+                    std::process::exit(1);
+                }
+                return;
             }
-            _ => {
-                eprintln!("Unknown option: {}", args[1]);
+            "uninstall-service" => {
+                if let Err(err) = uninstall_service() {
+                    eprintln!("Failed to uninstall service: {}", err);
+                    std::process::exit(1);
+                }
+                return;
+            }
+            other => {
+                eprintln!("Unknown option: {}", other);
                 eprintln!("Use --help for usage information");
                 std::process::exit(1);
             }
@@ -70,11 +84,6 @@ fn main() {
 
     // Load or create settings
     let mut settings = Settings::load_or_create(&config.settings_file);
-    
-    // Override verbose setting if quiet mode is enabled
-    if quiet_mode {
-        settings.verbose = false;
-    }
     
     let logger = Logger::new(config.log_file.clone());
     

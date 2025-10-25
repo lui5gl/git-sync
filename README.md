@@ -15,6 +15,7 @@ En lugar de depender de la infraestructura de GitLab, `git-sync` proporciona una
 ## Características
 
 - ✅ Sincronización automática de múltiples repositorios
+- ✅ Instalación directa como servicio `systemd`
 - ✅ Configuración flexible con `config.toml`
 - ✅ Loop continuo o ejecución única
 - ✅ Detección automática de rama por defecto (main/master)
@@ -28,15 +29,19 @@ En lugar de depender de la infraestructura de GitLab, `git-sync` proporciona una
 ```bash
 cargo build --release
 sudo cp target/release/git-sync /usr/local/bin/
+sudo git-sync install-service
 ```
 
-O descarga el binario compilado desde [Releases](https://github.com/lui5gl/git-sync/releases):
+O descarga el binario compilado desde [Releases](https://github.com/lui5gl/git-sync/releases) y luego instala el servicio:
 
 ```bash
 # Linux
 wget https://github.com/lui5gl/git-sync/releases/latest/download/git-sync
 chmod +x git-sync
 sudo mv git-sync /usr/local/bin/
+
+# Instalar y habilitar el servicio systemd
+sudo git-sync install-service
 
 # Verificar instalación
 git-sync --version
@@ -62,12 +67,23 @@ antiguos.
 
 ## Desinstalación
 
-```bash
-# Eliminar el binario
-sudo rm /usr/local/bin/git-sync
+1. Detén y elimina el servicio:
+   ```bash
+   sudo git-sync uninstall-service
+   ```
 
-# Eliminar configuración y logs (opcional)
-rm -rf ~/.config/git-sync
+2. (Opcional) elimina el binario y la configuración:
+   ```bash
+   sudo rm /usr/local/bin/git-sync
+   rm -rf ~/.config/git-sync
+   ```
+
+## Comandos disponibles
+
+```bash
+git-sync install-service   # Instala y habilita el servicio systemd (requiere sudo)
+git-sync uninstall-service # Detiene y elimina el servicio systemd
+git-sync                   # Ejecuta el daemon (útil para pruebas puntuales)
 ```
 
 ## Configuración
@@ -114,49 +130,26 @@ Edita `~/.config/git-sync/repositories.txt` y añade las rutas absolutas de tus 
 
 ## Uso
 
-### Modo daemon (continuo)
+### Como servicio systemd (recomendado)
+
+Tras ejecutar `sudo git-sync install-service`, `systemd` arrancará el daemon en segundo plano:
+
+```bash
+sudo systemctl status git-sync
+```
+
+La unidad utiliza la cuenta del usuario que ejecutó la instalación y corre el binario directamente, leyendo la configuración desde `~/.config/git-sync`. Los logs se guardan en `~/.config/git-sync/.log`.
+
+Para aplicar cambios, edita los archivos de configuración y el servicio recargará la configuración en el siguiente ciclo.
+
+### Ejecución manual (opcional)
+
+Si deseas validar el comportamiento sin systemd, ejecuta directamente:
 ```bash
 git-sync
 ```
 
-El programa ejecutará un loop infinito:
-1. Revisa todos los repositorios
-2. Hace fetch y pull si hay cambios
-3. Espera el tiempo configurado en `sync_interval`
-4. Repite
-
-**Si hay algún error y `stop_on_error=true`, el programa se detiene** (exit code 1).
-
-### Modo quiet (silencioso)
-Ideal para ejecutar en segundo plano con mínimo consumo de recursos:
-```bash
-# Ejecutar en background con salida mínima
-git-sync --quiet &
-
-# O con nohup para mantenerlo corriendo después de cerrar sesión
-nohup git-sync --quiet > /dev/null 2>&1 &
-```
-
-El modo quiet (`-q` o `--quiet`) desactiva toda la salida verbose, manteniendo solo los errores críticos.
-
-### Modo único (sin loop)
-Edita `~/.config/git-sync/config.toml` y establece:
-```toml
-continuous_mode = false
-```
-
-Luego ejecuta:
-```bash
-git-sync
-```
-
-### Con cron
-```bash
-# Cada 5 minutos
-*/5 * * * * /usr/local/bin/git-sync >> /tmp/git-sync-cron.log 2>&1
-```
-
-Si un ciclo falla, el programa se detiene y cron no lo volverá a ejecutar hasta el siguiente intervalo.
+El proceso se comportará exactamente igual que cuando lo arranca el servicio: recorre todos los repositorios, sincroniza y continúa en loop continuo (o único si `continuous_mode = false`).
 
 ### Logs
 
@@ -178,6 +171,7 @@ src/
 ├── config.rs      # Configuración y lectura de repositories.txt
 ├── git.rs         # Operaciones Git (fetch, pull, branches)
 ├── logger.rs      # Sistema de logging con timestamps
+├── service.rs     # Instalación/desinstalación del servicio systemd
 └── processor.rs   # Procesamiento de repositorios
 ```
 

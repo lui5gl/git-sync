@@ -70,8 +70,11 @@ impl Settings {
     pub fn reload(&mut self, config_file: &str) {
         if let Ok(contents) = fs::read_to_string(config_file) {
             if let Ok(new_settings) = toml::from_str(&contents) {
+                let was_verbose = self.verbose;
                 *self = new_settings;
-                println!("🔄 Configuration reloaded");
+                if was_verbose && self.verbose {
+                    println!("🔄 Configuration reloaded");
+                }
             }
         }
     }

@@ -104,7 +104,7 @@ pub fn install_service() -> Result<(), String> {
     let (username, home_dir) = resolve_service_user()?;
 
     let service_content = format!(
-        "[Unit]\nDescription=Git Sync daemon\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nUser={username}\nWorkingDirectory={home_dir}\nEnvironment=HOME={home_dir}\nExecStart={exec_display} --quiet\nRestart=on-failure\nRestartSec=60\n\n[Install]\nWantedBy=multi-user.target\n"
+        "[Unit]\nDescription=Git Sync daemon\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nUser={username}\nWorkingDirectory={home_dir}\nEnvironment=HOME={home_dir}\nExecStart={exec_display}\nRestart=on-failure\nRestartSec=60\n\n[Install]\nWantedBy=multi-user.target\n"
     );
 
     write_service_file(&service_content)?;
