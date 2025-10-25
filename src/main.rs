@@ -4,12 +4,14 @@ mod logger;
 mod processor;
 mod service;
 mod settings;
+mod tui;
 
 use config::Config;
 use logger::Logger;
 use processor::RepoProcessor;
 use service::{install_service, uninstall_service};
 use settings::Settings;
+use tui::run_repo_manager;
 use std::env;
 use std::thread;
 use std::time::Duration;
@@ -29,6 +31,7 @@ fn print_help() {
     println!("\nCOMMANDS:");
     println!("    install-service    Install and start the git-sync systemd service");
     println!("    uninstall-service  Remove the git-sync systemd service");
+    println!("    repos              Launch interactive TUI to manage repositories");
     println!("    -h, --help         Print help information");
     println!("    -v, --version      Print version information");
     println!("\nCONFIGURATION:");
@@ -41,6 +44,7 @@ fn print_help() {
 fn main() {
     // Parse command line arguments
     let args: Vec<String> = env::args().collect();
+    let config = Config::new();
 
     if let Some(command) = args.get(1).map(|s| s.as_str()) {
         match command {
@@ -66,6 +70,21 @@ fn main() {
                 }
                 return;
             }
+            "repos" | "manage-repos" => {
+                match config.ensure_exists() {
+                    Ok(_) => {}
+                    Err(err) => {
+                        eprintln!("{}", err);
+                        eprintln!("Please run `sudo git-sync install-service` to initialize the configuration layout.");
+                        std::process::exit(1);
+                    }
+                }
+                if let Err(err) = run_repo_manager(&config) {
+                    eprintln!("Error running repository manager: {}", err);
+                    std::process::exit(1);
+                }
+                return;
+            }
             other => {
                 eprintln!("Unknown option: {}", other);
                 eprintln!("Use --help for usage information");
@@ -74,7 +93,6 @@ fn main() {
         }
     }
 
-    let config = Config::new();
     let repos_created = match config.ensure_exists() {
         Ok(created) => created,
         Err(err) => {

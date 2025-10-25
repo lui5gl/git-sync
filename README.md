@@ -85,6 +85,7 @@ antiguos.
 ```bash
 git-sync install-service   # Instala y habilita el servicio systemd (requiere sudo)
 git-sync uninstall-service # Detiene y elimina el servicio systemd
+sudo git-sync repos        # Abre la TUI para administrar repositorios (requiere sudo)
 git-sync                   # Ejecuta el daemon (útil para pruebas puntuales)
 ```
 
@@ -132,6 +133,21 @@ Edita `/etc/git-sync/repositories.txt` (requiere sudo) y añade las rutas absolu
 /home/user/projects/repo3
 ```
 
+### Gestor interactivo de repositorios (TUI)
+
+Si prefieres no editar archivos a mano, ejecuta:
+
+```bash
+sudo git-sync repos
+```
+
+El gestor basado en `ratatui` permite:
+- Navegar con ↑/↓
+- Añadir (`a`), editar (`e` o Enter) y eliminar (`d`) rutas
+- Guardar con Enter y salir con `q` o `Esc`
+
+Los cambios se escriben directamente en `/etc/git-sync/repositories.txt`.
+
 ## Uso
 
 ### Como servicio systemd (recomendado)
@@ -176,7 +192,8 @@ src/
 ├── git.rs         # Operaciones Git (fetch, pull, branches)
 ├── logger.rs      # Sistema de logging con timestamps
 ├── service.rs     # Instalación/desinstalación del servicio systemd
-└── processor.rs   # Procesamiento de repositorios
+├── processor.rs   # Procesamiento de repositorios
+└── tui.rs         # Gestor interactivo de repositorios (ratatui)
 ```
 
 ## Comportamiento ante errores

@@ -115,4 +115,24 @@ impl Config {
             .map(|line| line.to_string())
             .collect()
     }
+
+    pub fn write_repos(&self, repos: &[String]) -> Result<(), String> {
+        let mut content = String::from("# Repository list managed by git-sync\n");
+        content.push_str("# One absolute path per line\n");
+        if !repos.is_empty() {
+            for repo in repos {
+                content.push_str(repo.trim());
+                content.push('\n');
+            }
+        }
+
+        fs::write(&self.repos_file, content)
+            .map_err(|e| format!("Failed to write repositories file {}: {}", self.repos_file, e))?;
+
+        let permissions = fs::Permissions::from_mode(0o644);
+        fs::set_permissions(&self.repos_file, permissions)
+            .map_err(|e| format!("Failed to set permissions on {}: {}", self.repos_file, e))?;
+
+        Ok(())
+    }
 }
