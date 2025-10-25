@@ -32,9 +32,9 @@ fn print_help() {
     println!("    -h, --help         Print help information");
     println!("    -v, --version      Print version information");
     println!("\nCONFIGURATION:");
-    println!("    Config file: ~/.config/git-sync/config.toml");
-    println!("    Repos file:  ~/.config/git-sync/repositories.txt");
-    println!("    Log file:    ~/.config/git-sync/.log");
+    println!("    Config file: /etc/git-sync/config.toml");
+    println!("    Repos file:  /etc/git-sync/repositories.txt");
+    println!("    Log file:    /var/log/git-sync/git-sync.log");
     println!("\nFor more information, visit: https://github.com/lui5gl/git-sync");
 }
 
@@ -75,7 +75,14 @@ fn main() {
     }
 
     let config = Config::new();
-    let repos_created = config.ensure_exists();
+    let repos_created = match config.ensure_exists() {
+        Ok(created) => created,
+        Err(err) => {
+            eprintln!("{}", err);
+            eprintln!("Please run `sudo git-sync install-service` to initialize the configuration layout.");
+            std::process::exit(1);
+        }
+    };
 
     // Exit early if repos file was just created
     if repos_created {

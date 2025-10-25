@@ -16,12 +16,11 @@ En lugar de depender de la infraestructura de GitLab, `git-sync` proporciona una
 
 - ✅ Sincronización automática de múltiples repositorios
 - ✅ Instalación directa como servicio `systemd`
-- ✅ Configuración flexible con `config.toml`
+- ✅ Configuración centralizada en `/etc/git-sync/config.toml`
 - ✅ Loop continuo o ejecución única
 - ✅ Detección automática de rama por defecto (main/master)
-- ✅ Logging completo con timestamps en archivo `.log`
+- ✅ Logging completo en `/var/log/git-sync/git-sync.log`
 - ✅ **Se detiene ante cualquier error** (ideal para cron jobs)
-- ✅ Configuración en `~/.config/git-sync/`
 - ✅ Recarga de configuración en caliente
 
 ## Instalación
@@ -46,6 +45,8 @@ sudo git-sync install-service
 # Verificar instalación
 git-sync --version
 ```
+
+Edita `/etc/git-sync/config.toml` y `/etc/git-sync/repositories.txt` con privilegios de administrador para ajustar la configuración y la lista de repos sincronizados. Luego reinicia el servicio con `sudo systemctl restart git-sync`.
 
 ### Compatibilidad con distribuciones antiguas (CentOS 7 y anteriores)
 
@@ -72,10 +73,11 @@ antiguos.
    sudo git-sync uninstall-service
    ```
 
-2. (Opcional) elimina el binario y la configuración:
+2. (Opcional) elimina el binario, la configuración y los logs:
    ```bash
    sudo rm /usr/local/bin/git-sync
-   rm -rf ~/.config/git-sync
+   sudo rm -rf /etc/git-sync
+   sudo rm -rf /var/log/git-sync
    ```
 
 ## Comandos disponibles
@@ -91,10 +93,12 @@ git-sync                   # Ejecuta el daemon (útil para pruebas puntuales)
 Al ejecutar por primera vez, se creará automáticamente:
 
 ```
-~/.config/git-sync/
-├── config.toml        # Configuración del programa
-├── repositories.txt   # Lista de repositorios
-└── .log               # Archivo de logs
+/etc/git-sync/
+├── config.toml        # Configuración del servicio
+└── repositories.txt   # Lista de repositorios a sincronizar
+
+/var/log/git-sync/
+└── git-sync.log       # Archivo de logs con timestamp
 ```
 
 ### config.toml
@@ -119,7 +123,7 @@ verbose = true
 continuous_mode = true
 ```
 
-Edita `~/.config/git-sync/repositories.txt` y añade las rutas absolutas de tus repositorios:
+Edita `/etc/git-sync/repositories.txt` (requiere sudo) y añade las rutas absolutas de tus repositorios:
 
 ```
 # Repositorios a sincronizar
@@ -138,7 +142,7 @@ Tras ejecutar `sudo git-sync install-service`, `systemd` arrancará el daemon en
 sudo systemctl status git-sync
 ```
 
-La unidad utiliza la cuenta del usuario que ejecutó la instalación y corre el binario directamente, leyendo la configuración desde `~/.config/git-sync`. Los logs se guardan en `~/.config/git-sync/.log`.
+La unidad utiliza la cuenta del usuario que ejecutó la instalación y corre el binario directamente, leyendo la configuración desde `/etc/git-sync`. Los logs se guardan en `/var/log/git-sync/git-sync.log`.
 
 Para aplicar cambios, edita los archivos de configuración y el servicio recargará la configuración en el siguiente ciclo.
 
@@ -153,7 +157,7 @@ El proceso se comportará exactamente igual que cuando lo arranca el servicio: r
 
 ### Logs
 
-Los logs se guardan automáticamente en `~/.config/git-sync/.log`:
+Los logs se guardan automáticamente en `/var/log/git-sync/git-sync.log`:
 
 ```
 [2025-10-21 14:30:00] Git Sync - Repository synchronization daemon

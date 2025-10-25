@@ -1,3 +1,4 @@
+use crate::config::Config;
 use std::env;
 use std::fs::{self, File};
 use std::io::Write;
@@ -90,6 +91,23 @@ fn run_systemctl(args: &[&str]) {
     }
 }
 
+fn chown_path(path: &str, username: &str) -> Result<(), String> {
+    let status = Command::new("chown")
+        .arg(format!("{}:{}", username, username))
+        .arg(path)
+        .status()
+        .map_err(|e| format!("Failed to change ownership for {}: {}", path, e))?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "chown command for {} exited with status {}",
+            path, status
+        ))
+    }
+}
+
 pub fn install_service() -> Result<(), String> {
     if Path::new(SERVICE_PATH).exists() {
         return Err("git-sync service is already installed".to_string());
@@ -102,6 +120,14 @@ pub fn install_service() -> Result<(), String> {
         .ok_or_else(|| "Executable path contains invalid UTF-8".to_string())?;
 
     let (username, home_dir) = resolve_service_user()?;
+    let config = Config::new();
+
+    let _ = config
+        .ensure_exists()
+        .map_err(|e| format!("Failed to initialize configuration layout: {}", e))?;
+
+    chown_path(&config.log_dir, &username)?;
+    chown_path(&config.log_file, &username)?;
 
     let service_content = format!(
         "[Unit]\nDescription=Git Sync daemon\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nUser={username}\nWorkingDirectory={home_dir}\nEnvironment=HOME={home_dir}\nExecStart={exec_display}\nRestart=on-failure\nRestartSec=60\n\n[Install]\nWantedBy=multi-user.target\n"
