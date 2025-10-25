@@ -110,7 +110,7 @@ fn chown_path(path: &str, username: &str) -> Result<(), String> {
 
 pub fn install_service() -> Result<(), String> {
     if Path::new(SERVICE_PATH).exists() {
-        return Err("git-sync service is already installed".to_string());
+        return Ok(());
     }
 
     let exe_path = env::current_exe()
@@ -130,23 +130,13 @@ pub fn install_service() -> Result<(), String> {
     chown_path(&config.log_file, &username)?;
 
     let service_content = format!(
-        "[Unit]\nDescription=Git Sync daemon\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nUser={username}\nWorkingDirectory={home_dir}\nEnvironment=HOME={home_dir}\nExecStart={exec_display}\nRestart=on-failure\nRestartSec=60\n\n[Install]\nWantedBy=multi-user.target\n"
+        "[Unit]\nDescription=Git Sync daemon\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nUser={username}\nWorkingDirectory={home_dir}\nEnvironment=HOME={home_dir}\nExecStart={exec_display} daemon\nRestart=on-failure\nRestartSec=60\n\n[Install]\nWantedBy=multi-user.target\n"
     );
 
     write_service_file(&service_content)?;
 
-    println!("✅ Service file created at {}", SERVICE_PATH);
-    println!(
-        "📦 Service will run as user '{}' with HOME='{}'",
-        username, home_dir
-    );
-
     run_systemctl(&["daemon-reload"]);
     run_systemctl(&["enable", "--now", SERVICE_NAME]);
-
-    println!("\nIf systemctl commands failed, run the following manually:");
-    println!("  sudo systemctl daemon-reload");
-    println!("  sudo systemctl enable --now {}", SERVICE_NAME);
 
     Ok(())
 }

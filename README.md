@@ -28,7 +28,7 @@ En lugar de depender de la infraestructura de GitLab, `git-sync` proporciona una
 ```bash
 cargo build --release
 sudo cp target/release/git-sync /usr/local/bin/
-sudo git-sync install-service
+sudo git-sync      # Primera ejecución: instala el servicio y abre la TUI
 ```
 
 O descarga el binario compilado desde [Releases](https://github.com/lui5gl/git-sync/releases) y luego instala el servicio:
@@ -39,8 +39,8 @@ wget https://github.com/lui5gl/git-sync/releases/latest/download/git-sync
 chmod +x git-sync
 sudo mv git-sync /usr/local/bin/
 
-# Instalar y habilitar el servicio systemd
-sudo git-sync install-service
+# Inicializar e instalar el servicio systemd
+sudo git-sync
 
 # Verificar instalación
 git-sync --version
@@ -83,10 +83,10 @@ antiguos.
 ## Comandos disponibles
 
 ```bash
-git-sync install-service   # Instala y habilita el servicio systemd (requiere sudo)
+sudo git-sync              # Abre la interfaz TUI (instala el servicio si es necesario)
+git-sync daemon            # Ejecuta el daemon de sincronización (lo usa systemd)
 git-sync uninstall-service # Detiene y elimina el servicio systemd
-sudo git-sync repos        # Abre la TUI para administrar repositorios (requiere sudo)
-git-sync                   # Ejecuta el daemon (útil para pruebas puntuales)
+git-sync --help            # Muestra ayuda
 ```
 
 ## Configuración
@@ -138,7 +138,7 @@ Edita `/etc/git-sync/repositories.txt` (requiere sudo) y añade las rutas absolu
 Si prefieres no editar archivos a mano, ejecuta:
 
 ```bash
-sudo git-sync repos
+sudo git-sync
 ```
 
 El gestor basado en `ratatui` permite:
@@ -152,7 +152,7 @@ Los cambios se escriben directamente en `/etc/git-sync/repositories.txt`.
 
 ### Como servicio systemd (recomendado)
 
-Tras ejecutar `sudo git-sync install-service`, `systemd` arrancará el daemon en segundo plano:
+Después de la primera ejecución de `sudo git-sync`, `systemd` arrancará el daemon en segundo plano:
 
 ```bash
 sudo systemctl status git-sync
