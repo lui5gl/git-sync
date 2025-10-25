@@ -6,19 +6,19 @@ use std::path::Path;
 pub struct Settings {
     /// Tiempo de espera entre ciclos de sincronización (en segundos)
     pub sync_interval: u64,
-    
+
     /// Detener el programa si hay algún error
     pub stop_on_error: bool,
-    
+
     /// Timeout para operaciones git (en segundos)
     pub git_timeout: u64,
-    
+
     /// Número máximo de reintentos en caso de fallo temporal
     pub max_retries: u32,
-    
+
     /// Mostrar output detallado
     pub verbose: bool,
-    
+
     /// Ejecutar en modo continuo (loop infinito)
     pub continuous_mode: bool,
 }

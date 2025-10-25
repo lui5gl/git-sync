@@ -37,8 +37,7 @@ impl Config {
             let default_content = "# Add absolute paths to your git repositories, one per line\n\
                                    # Example:\n\
                                    # /home/user/projects/my-repo\n";
-            fs::write(&self.repos_file, default_content)
-                .expect("Failed to create repos file");
+            fs::write(&self.repos_file, default_content).expect("Failed to create repos file");
             println!("✅ Created repos file: {}", self.repos_file);
             true
         } else {
@@ -46,15 +45,17 @@ impl Config {
         };
 
         if repos_created {
-            println!("\n📝 Please add repository paths to {} and run again.\n", self.repos_file);
+            println!(
+                "\n📝 Please add repository paths to {} and run again.\n",
+                self.repos_file
+            );
         }
 
         repos_created
     }
 
     pub fn read_repos(&self) -> Vec<String> {
-        let contents = fs::read_to_string(&self.repos_file)
-            .expect("Failed to read repos file");
+        let contents = fs::read_to_string(&self.repos_file).expect("Failed to read repos file");
 
         contents
             .lines()
