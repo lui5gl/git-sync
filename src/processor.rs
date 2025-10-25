@@ -14,18 +14,13 @@ impl<'a> RepoProcessor<'a> {
 
     pub fn process_all(&self, repo_paths: Vec<String>) -> Result<(), String> {
         if repo_paths.is_empty() {
-            self.logger
-                .log_line("No repositories found in config file.");
-            self.logger
-                .log_line("Please add repository paths (one per line).");
+            self.logger.log_line("No repositories found in config file.");
+            self.logger.log_line("Please add repository paths (one per line).");
             return Err("No repositories configured".to_string());
         }
 
         if self.verbose {
-            self.logger.log_line(&format!(
-                "Found {} repository/repositories to check\n",
-                repo_paths.len()
-            ));
+            self.logger.log_line(&format!("Found {} repository/repositories to check\n", repo_paths.len()));
         }
 
         for repo_path in repo_paths {
@@ -43,16 +38,14 @@ impl<'a> RepoProcessor<'a> {
 
     fn process_single(&self, repo_path: &str) -> Result<(), String> {
         if self.verbose {
-            self.logger
-                .log_line("==========================================");
+            self.logger.log_line("==========================================");
             self.logger.log_line(&format!("Processing: {}", repo_path));
-            self.logger
-                .log_line("==========================================");
+            self.logger.log_line("==========================================");
         }
 
         self.validate_repo(repo_path)?;
         self.check_and_pull(repo_path)?;
-
+        
         Ok(())
     }
 
@@ -101,10 +94,7 @@ impl<'a> RepoProcessor<'a> {
             }
             Ok(count) => {
                 if self.verbose {
-                    self.logger.log_line(&format!(
-                        "Remote has {} new commit(s). Pulling changes...",
-                        count
-                    ));
+                    self.logger.log_line(&format!("Remote has {} new commit(s). Pulling changes...", count));
                 }
 
                 match repo.pull(&branch) {

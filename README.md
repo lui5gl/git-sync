@@ -22,7 +22,6 @@ En lugar de depender de la infraestructura de GitLab, `git-sync` proporciona una
 - ✅ **Se detiene ante cualquier error** (ideal para cron jobs)
 - ✅ Configuración en `~/.config/git-sync/`
 - ✅ Recarga de configuración en caliente
-- ✅ Instalación como servicio de systemd con un solo comando
 
 ## Instalación
 
@@ -41,22 +40,6 @@ sudo mv git-sync /usr/local/bin/
 
 # Verificar instalación
 git-sync --version
-```
-
-### Instalar como servicio de systemd (recomendado)
-
-Con el binario disponible en el sistema, ejecuta:
-
-```bash
-sudo git-sync --install-service
-```
-
-Esto crea `/etc/systemd/system/git-sync.service`, recarga `systemd` y habilita el servicio para que inicie automáticamente. El servicio se ejecuta en modo `--quiet`, recargando la configuración en caliente como de costumbre.
-
-Para detener y eliminar el servicio:
-
-```bash
-sudo git-sync --uninstall-service
 ```
 
 ## Desinstalación
@@ -112,18 +95,6 @@ Edita `~/.config/git-sync/repositories.txt` y añade las rutas absolutas de tus 
 ```
 
 ## Uso
-
-### Instalar / desinstalar el servicio
-
-```bash
-# Crear el servicio y arrancarlo inmediatamente
-sudo git-sync --install-service
-
-# Detener y eliminar el servicio
-sudo git-sync --uninstall-service
-```
-
-Una vez instalado, `systemd` se encargará de ejecutar `git-sync` automáticamente al iniciar el sistema.
 
 ### Modo daemon (continuo)
 ```bash
