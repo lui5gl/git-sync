@@ -23,17 +23,43 @@ impl<'a> RepoProcessor<'a> {
             self.logger.log_line(&format!("Found {} repository/repositories to check\n", repo_paths.len()));
         }
 
+        let mut errors: Vec<(String, String)> = Vec::new();
+
         for repo_path in repo_paths {
-            self.process_single(&repo_path)?;
-            if self.verbose {
-                self.logger.log("\n");
+            match self.process_single(&repo_path) {
+                Ok(_) => {
+                    if self.verbose {
+                        self.logger.log("\n");
+                    }
+                }
+                Err(err) => {
+                    errors.push((repo_path.clone(), err.clone()));
+                    self.logger.log_line(&format!(
+                        "⚠️  Omitted repository {} due to error: {}",
+                        repo_path, err
+                    ));
+                }
             }
         }
 
         if self.verbose {
             self.logger.log_line("All repositories processed.");
         }
-        Ok(())
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            let details = errors
+                .iter()
+                .map(|(repo, err)| format!("- {} => {}", repo, err))
+                .collect::<Vec<_>>()
+                .join("\n");
+            Err(format!(
+                "{} repositories failed during sync:\n{}",
+                errors.len(),
+                details
+            ))
+        }
     }
 
     fn process_single(&self, repo_path: &str) -> Result<(), String> {
