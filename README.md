@@ -52,16 +52,16 @@ Edite `/etc/git-sync/config.toml` y `/etc/git-sync/repositories.txt` con privile
 
 ### Distribuciones antiguas (CentOS 7 y anteriores)
 
-Si el binario precompilado falla por dependencias de `GLIBC`, utilice el artefacto `git-sync-linux-amd64-musl` disponible en la sección de releases. Este ejecutable está enlazado estáticamente con `musl` y no requiere la biblioteca estándar de GNU. Para compilarlo de forma local:
+Si el binario precompilado falla por dependencias de `GLIBC`, utilice el artefacto `git-sync-linux-amd64-musl.tar.gz` disponible en la sección de releases. Dentro del archivo comprimido encontrará un ejecutable enlazado estáticamente con `musl`, generado automáticamente por GitHub Actions y apto para sistemas con versiones heredadas de `glibc`.
 
 ```bash
-sudo dnf install musl-gcc    # o yum install musl-gcc en versiones antiguas
-rustup target add x86_64-unknown-linux-musl
-cargo build --release --target x86_64-unknown-linux-musl
-sudo cp target/x86_64-unknown-linux-musl/release/git-sync /usr/local/bin/
+wget https://github.com/lui5gl/git-sync/releases/latest/download/git-sync-linux-amd64-musl.tar.gz
+tar -xzf git-sync-linux-amd64-musl.tar.gz
+chmod +x git-sync-linux-amd64-musl
+sudo mv git-sync-linux-amd64-musl /usr/local/bin/git-sync
 ```
 
-El binario resultante es compatible con distribuciones que incluyen versiones heredadas de `glibc`.
+Gracias al enlazado estático con `musl` no es necesario recompilar localmente para CentOS 7 o derivadas: la acción de GitHub publica el binario listo para usar en cada release.
 
 ## Desinstalación
 
