@@ -63,8 +63,6 @@ sudo mv git-sync-linux-amd64-musl /usr/local/bin/git-sync
 
 Gracias al enlazado estático con `musl` no es necesario recompilar localmente para CentOS 7 o derivadas: la acción de GitHub publica el binario listo para usar en cada release.
 
-> **Nota:** al publicar manualmente una versión desde la pestaña **Releases**, GitHub Actions reconstruye automáticamente el binario y adjunta los artefactos `git-sync-linux-amd64.tar.gz` y `git-sync-linux-amd64-musl.tar.gz`. Si necesita reintentar el proceso, use el botón **Run workflow** del flujo "Build and Release" e introduzca el tag correspondiente.
-
 ## Desinstalación
 
 1. Detenga y elimine el servicio:
