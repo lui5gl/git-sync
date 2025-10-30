@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 
-const SERVICE_NAME: &str = "git-sync.service";
+const SERVICE_NAME: &str = "git-sync";
 const SERVICE_PATH: &str = "/etc/systemd/system/git-sync.service";
 
 fn resolve_service_user() -> Result<(String, String), String> {
