@@ -40,7 +40,10 @@ fn resolve_service_user() -> Result<(String, String), String> {
         }
     }
 
-    Err("No fue posible determinar la información del usuario para instalar el servicio".to_string())
+    Err(
+        "No fue posible determinar la información del usuario para instalar el servicio"
+            .to_string(),
+    )
 }
 
 fn write_service_file(content: &str) -> Result<(), String> {
@@ -55,16 +58,24 @@ fn write_service_file(content: &str) -> Result<(), String> {
         ));
     }
 
-    let mut file =
-        File::create(SERVICE_PATH).map_err(|e| format!("No se pudo crear el archivo de servicio: {}", e))?;
+    let mut file = File::create(SERVICE_PATH)
+        .map_err(|e| format!("No se pudo crear el archivo de servicio: {}", e))?;
     file.write_all(content.as_bytes())
         .map_err(|e| format!("No se pudo escribir el archivo de servicio: {}", e))?;
-    file.sync_all()
-        .map_err(|e| format!("No se pudo sincronizar el archivo de servicio en disco: {}", e))?;
+    file.sync_all().map_err(|e| {
+        format!(
+            "No se pudo sincronizar el archivo de servicio en disco: {}",
+            e
+        )
+    })?;
 
     let permissions = fs::Permissions::from_mode(0o644);
-    fs::set_permissions(SERVICE_PATH, permissions)
-        .map_err(|e| format!("No se pudieron asignar permisos al archivo de servicio: {}", e))?;
+    fs::set_permissions(SERVICE_PATH, permissions).map_err(|e| {
+        format!(
+            "No se pudieron asignar permisos al archivo de servicio: {}",
+            e
+        )
+    })?;
 
     Ok(())
 }
@@ -122,9 +133,12 @@ pub fn install_service() -> Result<(), String> {
     let (username, home_dir) = resolve_service_user()?;
     let config = Config::new();
 
-    let _ = config
-        .ensure_exists()
-        .map_err(|e| format!("No se pudo inicializar la estructura de configuración: {}", e))?;
+    let _ = config.ensure_exists().map_err(|e| {
+        format!(
+            "No se pudo inicializar la estructura de configuración: {}",
+            e
+        )
+    })?;
 
     chown_path(&config.log_dir, &username)?;
     chown_path(&config.log_file, &username)?;
@@ -148,7 +162,8 @@ pub fn uninstall_service() -> Result<(), String> {
 
     run_systemctl(&["disable", "--now", SERVICE_NAME]);
 
-    fs::remove_file(SERVICE_PATH).map_err(|e| format!("No se pudo eliminar el archivo de servicio: {}", e))?;
+    fs::remove_file(SERVICE_PATH)
+        .map_err(|e| format!("No se pudo eliminar el archivo de servicio: {}", e))?;
 
     run_systemctl(&["daemon-reload"]);
 

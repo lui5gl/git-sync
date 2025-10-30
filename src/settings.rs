@@ -44,11 +44,17 @@ impl Settings {
                 Ok(contents) => match toml::from_str(&contents) {
                     Ok(settings) => return settings,
                     Err(e) => {
-                        eprintln!("Error al interpretar config.toml: {}. Se utilizarán los valores predeterminados.", e);
+                        eprintln!(
+                            "Error al interpretar config.toml: {}. Se utilizarán los valores predeterminados.",
+                            e
+                        );
                     }
                 },
                 Err(e) => {
-                    eprintln!("Error al leer config.toml: {}. Se utilizarán los valores predeterminados.", e);
+                    eprintln!(
+                        "Error al leer config.toml: {}. Se utilizarán los valores predeterminados.",
+                        e
+                    );
                 }
             }
         }

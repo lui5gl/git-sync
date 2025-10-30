@@ -22,6 +22,7 @@ La herramienta se ejecuta en el entorno local del usuario, opera de manera indep
 - Registro detallado en `/var/log/git-sync/git-sync.log`
 - Interrupción inmediata ante errores (ideal para tareas programadas)
 - Recarga dinámica de la configuración sin reinicios manuales
+- Despliegue opcional de proyectos Node/Vue: ejecuta `npm run build` y copia `dist` al destino elegido
 
 ## Instalación
 
@@ -128,6 +129,9 @@ Defina las rutas absolutas de los repositorios en `/etc/git-sync/repositories.tx
 /home/user/projects/repo1
 /home/user/projects/repo2
 /home/user/projects/repo3
+
+# Proyectos que requieren build y despliegue
+/home/user/projects/mi-app-vue => /var/www/html/mi-app
 ```
 
 ### Gestor interactivo de repositorios (TUI)
@@ -137,6 +141,7 @@ El comando `sudo git-sync` abre la interfaz basada en `ratatui`, que permite:
 - Desplazamiento con ↑/↓
 - Añadir (`a`), modificar (`e` o Enter) y eliminar (`d`) rutas
 - Guardar con Enter y salir con `q` o `Esc`
+- Tras ingresar la ruta se debe elegir: `1` para repositorio simple o `2` para proyecto con build; si eliges build, se solicitará la carpeta destino (vacía para mantenerlo como simple)
 
 Las modificaciones se escriben directamente en `/etc/git-sync/repositories.txt`.
 

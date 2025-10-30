@@ -26,8 +26,12 @@ fn print_help() {
     println!("git-sync v{}", VERSION);
     println!("\nServicio de sincronización de repositorios Git.");
     println!("\nUSO:");
-    println!("    git-sync             # Abre la interfaz interactiva para gestionar repositorios (instala el servicio si es necesario)");
-    println!("    git-sync daemon      # Ejecuta el daemon de sincronización (utilizado por systemd)");
+    println!(
+        "    git-sync             # Abre la interfaz interactiva para gestionar repositorios (instala el servicio si es necesario)"
+    );
+    println!(
+        "    git-sync daemon      # Ejecuta el daemon de sincronización (utilizado por systemd)"
+    );
     println!("    git-sync uninstall-service  # Detiene y elimina el servicio systemd");
     println!("    git-sync --help      # Muestra esta ayuda");
     println!("    git-sync --version   # Muestra la versión actual");
@@ -71,7 +75,10 @@ fn main() {
 
     // Sin argumentos: instalar el servicio y abrir la TUI
     if let Err(err) = install_service() {
-        eprintln!("No fue posible instalar o habilitar el servicio automáticamente: {}", err);
+        eprintln!(
+            "No fue posible instalar o habilitar el servicio automáticamente: {}",
+            err
+        );
         eprintln!("Ejecute `sudo git-sync daemon` o complete la instalación de forma manual.");
     }
 
@@ -109,9 +116,15 @@ fn run_daemon(config: Config) {
         logger.log_line("=================================================");
         logger.log_line("Git Sync - Daemon de sincronización de repositorios");
         logger.log_line("=================================================");
-        logger.log_line(&format!("Intervalo de sincronización: {} segundos", settings.sync_interval));
+        logger.log_line(&format!(
+            "Intervalo de sincronización: {} segundos",
+            settings.sync_interval
+        ));
         logger.log_line(&format!("Detener ante error: {}", settings.stop_on_error));
-        logger.log_line(&format!("Tiempo de espera para Git: {} segundos", settings.git_timeout));
+        logger.log_line(&format!(
+            "Tiempo de espera para Git: {} segundos",
+            settings.git_timeout
+        ));
         logger.log_line(&format!("Reintentos máximos: {}", settings.max_retries));
         logger.log_line(&format!("Modo continuo: {}\n", settings.continuous_mode));
     }
@@ -125,7 +138,10 @@ fn run_daemon(config: Config) {
         run_sync_cycle(&config, &logger, &settings);
 
         if settings.verbose {
-            logger.log_line(&format!("\nEn espera de {} segundos antes del siguiente ciclo...\n", settings.sync_interval));
+            logger.log_line(&format!(
+                "\nEn espera de {} segundos antes del siguiente ciclo...\n",
+                settings.sync_interval
+            ));
         }
 
         thread::sleep(Duration::from_secs(settings.sync_interval));

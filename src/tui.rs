@@ -1,20 +1,26 @@
-use crate::config::Config;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crate::config::{Config, RepoDefinition};
 use crossterm::ExecutableCommand;
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
+use ratatui::Frame;
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
-use ratatui::Frame;
-use ratatui::Terminal;
-use std::io::{stdout, Stdout};
+use std::io::{Stdout, stdout};
 
+#[derive(Clone)]
 enum InputMode {
     Normal,
-    Adding,
-    Editing(usize),
+    AddingSource,
+    ChoosingBuildType { source: String },
+    AddingDestination { source: String },
+    EditingSource(usize),
+    EditingDestination { index: usize, source: String },
 }
 
 pub fn run_repo_manager(config: &Config) -> Result<(), String> {
@@ -30,7 +36,8 @@ pub fn run_repo_manager(config: &Config) -> Result<(), String> {
 
     let result = run_loop(&mut terminal, config);
 
-    disable_raw_mode().map_err(|e| format!("No se pudo desactivar el modo raw del terminal: {}", e))?;
+    disable_raw_mode()
+        .map_err(|e| format!("No se pudo desactivar el modo raw del terminal: {}", e))?;
     terminal
         .backend_mut()
         .execute(LeaveAlternateScreen)
@@ -44,7 +51,7 @@ pub fn run_repo_manager(config: &Config) -> Result<(), String> {
 
 struct RepoManager<'a> {
     config: &'a Config,
-    repos: Vec<String>,
+    repos: Vec<RepoDefinition>,
     list_state: ListState,
     input_mode: InputMode,
     input: String,
@@ -90,17 +97,20 @@ impl<'a> RepoManager<'a> {
     }
 
     fn start_add(&mut self) {
-        self.input_mode = InputMode::Adding;
+        self.input_mode = InputMode::AddingSource;
         self.input.clear();
-        self.message = None;
+        self.set_message(
+            "Introduce la ruta del repositorio a sincronizar",
+            Color::Cyan,
+        );
     }
 
     fn start_edit(&mut self) {
         if let Some(index) = self.list_state.selected() {
             if let Some(repo) = self.repos.get(index) {
-                self.input_mode = InputMode::Editing(index);
-                self.input = repo.clone();
-                self.message = None;
+                self.input_mode = InputMode::EditingSource(index);
+                self.input = repo.repo_path.clone();
+                self.set_message("Actualiza la ruta del repositorio", Color::Cyan);
             }
         }
     }
@@ -122,32 +132,112 @@ impl<'a> RepoManager<'a> {
     }
 
     fn submit(&mut self) -> Result<(), String> {
-        let trimmed = self.input.trim();
-        if trimmed.is_empty() {
-            self.set_message("La ruta no puede estar vacía", Color::Red);
-            return Ok(());
-        }
+        let input_value = self.input.trim().to_string();
+        match self.input_mode.clone() {
+            InputMode::AddingSource => {
+                if input_value.is_empty() {
+                    self.set_message("La ruta del repositorio no puede estar vacía", Color::Red);
+                    return Ok(());
+                }
+                self.input_mode = InputMode::ChoosingBuildType {
+                    source: input_value.clone(),
+                };
+                self.input.clear();
+                self.set_message(
+                    "¿El proyecto requiere compilación? 1) No • 2) Sí",
+                    Color::Cyan,
+                );
+            }
+            InputMode::AddingDestination { source } => {
+                if input_value.is_empty() {
+                    self.finalize_simple_repo(source)?;
+                    return Ok(());
+                }
 
-        match self.input_mode {
-            InputMode::Adding => {
-                self.repos.push(trimmed.to_string());
+                let deploy_target = input_value.clone();
+                self.repos
+                    .push(RepoDefinition::new(source, Some(deploy_target.clone())));
                 self.persist()?;
                 self.list_state.select(Some(self.repos.len() - 1));
-                self.set_message("Repositorio añadido", Color::Green);
+                self.set_message("Repositorio de compilación añadido", Color::Green);
+                self.input_mode = InputMode::Normal;
+                self.input.clear();
             }
-            InputMode::Editing(index) => {
-                if let Some(slot) = self.repos.get_mut(index) {
-                    *slot = trimmed.to_string();
-                    self.persist()?;
-                    self.set_message("Repositorio actualizado", Color::Green);
+            InputMode::ChoosingBuildType { .. } => {}
+            InputMode::EditingSource(index) => {
+                if input_value.is_empty() {
+                    self.set_message("La ruta del repositorio no puede estar vacía", Color::Red);
+                    return Ok(());
                 }
+                if index >= self.repos.len() {
+                    self.set_message("No se encontró el repositorio seleccionado", Color::Red);
+                    self.cancel_input();
+                    return Ok(());
+                }
+                let current_destination =
+                    self.repos[index].deploy_target.clone().unwrap_or_default();
+                self.input_mode = InputMode::EditingDestination {
+                    index,
+                    source: input_value,
+                };
+                self.input = current_destination;
+                self.set_message(
+                    "Actualiza la ruta de destino (opcional). Deja vacío para deshabilitar la compilación.",
+                    Color::Cyan,
+                );
+            }
+            InputMode::EditingDestination { index, source } => {
+                if index >= self.repos.len() {
+                    self.set_message("No se encontró el repositorio seleccionado", Color::Red);
+                    self.input_mode = InputMode::Normal;
+                    self.input.clear();
+                    return Ok(());
+                }
+                let deploy_target = if input_value.is_empty() {
+                    None
+                } else {
+                    Some(input_value.clone())
+                };
+                if let Some(repo) = self.repos.get_mut(index) {
+                    repo.repo_path = source;
+                    repo.deploy_target = deploy_target.clone();
+                }
+                self.persist()?;
+                self.set_message(
+                    if deploy_target.is_some() {
+                        "Repositorio actualizado (compilación)"
+                    } else {
+                        "Repositorio actualizado"
+                    },
+                    Color::Green,
+                );
+                self.input_mode = InputMode::Normal;
+                self.input.clear();
             }
             InputMode::Normal => {}
         }
 
+        Ok(())
+    }
+
+    fn finalize_simple_repo(&mut self, source: String) -> Result<(), String> {
+        self.repos
+            .push(RepoDefinition::new(source, Option::<String>::None));
+        self.persist()?;
+        self.list_state.select(Some(self.repos.len() - 1));
+        self.set_message("Repositorio añadido", Color::Green);
         self.input_mode = InputMode::Normal;
         self.input.clear();
         Ok(())
+    }
+
+    fn begin_destination_input(&mut self, source: String) {
+        self.input_mode = InputMode::AddingDestination { source };
+        self.input.clear();
+        self.set_message(
+            "Introduce la ruta de destino para desplegar el `dist` (Enter para confirmar, vacío para guardar como simple).",
+            Color::Cyan,
+        );
     }
 
     fn cancel_input(&mut self) {
@@ -173,7 +263,10 @@ impl<'a> RepoManager<'a> {
     }
 }
 
-fn run_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>, config: &Config) -> Result<(), String> {
+fn run_loop(
+    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    config: &Config,
+) -> Result<(), String> {
     let mut manager = RepoManager::new(config);
 
     loop {
@@ -182,12 +275,14 @@ fn run_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>, config: &Config) 
             .map_err(|e| format!("No se pudo renderizar la interfaz: {}", e))?;
 
         match event::read().map_err(|e| format!("No se pudo leer el evento de entrada: {}", e))? {
-            Event::Key(KeyEvent { code, modifiers, .. }) => {
+            Event::Key(KeyEvent {
+                code, modifiers, ..
+            }) => {
                 if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
                     return Ok(());
                 }
 
-                match manager.input_mode {
+                match manager.input_mode.clone() {
                     InputMode::Normal => match code {
                         KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
                         KeyCode::Char('a') => manager.start_add(),
@@ -197,7 +292,20 @@ fn run_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>, config: &Config) 
                         KeyCode::Up => manager.select_previous(),
                         _ => {}
                     },
-                    InputMode::Adding | InputMode::Editing(_) => match code {
+                    InputMode::ChoosingBuildType { source } => match code {
+                        KeyCode::Char('1') | KeyCode::Char('n') | KeyCode::Char('N') => {
+                            manager.finalize_simple_repo(source)?
+                        }
+                        KeyCode::Char('2') | KeyCode::Char('s') | KeyCode::Char('S') => {
+                            manager.begin_destination_input(source)
+                        }
+                        KeyCode::Esc => manager.cancel_input(),
+                        _ => {}
+                    },
+                    InputMode::AddingSource
+                    | InputMode::AddingDestination { .. }
+                    | InputMode::EditingSource(_)
+                    | InputMode::EditingDestination { .. } => match code {
                         KeyCode::Enter => manager.submit()?,
                         KeyCode::Esc => manager.cancel_input(),
                         KeyCode::Backspace => manager.backspace(),
@@ -236,21 +344,46 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         manager
             .repos
             .iter()
-            .map(|repo| ListItem::new(Span::raw(repo.clone())))
+            .map(|repo| {
+                let label = match &repo.deploy_target {
+                    Some(target) if !target.is_empty() => {
+                        format!("{} ⇒ {}", repo.repo_path, target)
+                    }
+                    _ => repo.repo_path.clone(),
+                };
+                ListItem::new(Span::raw(label))
+            })
             .collect()
     };
 
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title("Repositorios"))
-        .highlight_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        .highlight_style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )
         .highlight_symbol("➜ ");
 
     frame.render_stateful_widget(list, chunks[0], &mut manager.list_state);
 
     let instructions = match manager.input_mode {
-        InputMode::Normal => "↑/↓ mover • a añadir • e editar • d eliminar • Enter editar • q/Esc salir",
-        InputMode::Adding => "Modo añadir: escribe la ruta y presiona Enter para guardar, Esc para cancelar",
-        InputMode::Editing(_) => "Modo editar: modifica la ruta y presiona Enter para guardar, Esc para cancelar",
+        InputMode::Normal => {
+            "↑/↓ mover • a añadir • e editar • d eliminar • Enter editar • q/Esc salir"
+        }
+        InputMode::AddingSource => {
+            "Modo añadir (origen): escribe la ruta del repositorio y presiona Enter"
+        }
+        InputMode::ChoosingBuildType { .. } => {
+            "Selecciona si el proyecto requiere compilación: 1) No • 2) Sí • Esc cancelar"
+        }
+        InputMode::AddingDestination { .. } => {
+            "Modo añadir (destino): escribe la ruta destino y presiona Enter, o deja vacío para guardar como simple"
+        }
+        InputMode::EditingSource(_) => "Modo editar (origen): modifica la ruta y presiona Enter",
+        InputMode::EditingDestination { .. } => {
+            "Modo editar (destino opcional): modifica la ruta destino y presiona Enter, o deja vacío"
+        }
     };
 
     let instruction_paragraph = Paragraph::new(instructions)
@@ -258,17 +391,35 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         .block(Block::default().borders(Borders::ALL).title("Comandos"));
     frame.render_widget(instruction_paragraph, chunks[1]);
 
-    let input_text = match manager.input_mode {
-        InputMode::Normal => "".to_string(),
-        _ => manager.input.clone(),
+    let (input_text, input_title) = match manager.input_mode {
+        InputMode::Normal => ("".to_string(), "Ruta"),
+        InputMode::AddingSource | InputMode::EditingSource(_) => {
+            (manager.input.clone(), "Ruta origen")
+        }
+        InputMode::AddingDestination { .. } | InputMode::EditingDestination { .. } => {
+            (manager.input.clone(), "Ruta destino (opcional)")
+        }
+        InputMode::ChoosingBuildType { .. } => (
+            "1) Sin build • 2) Ejecutar build y desplegar dist".to_string(),
+            "Tipo de proyecto",
+        ),
     };
     let input_block = Paragraph::new(input_text)
         .style(Style::default().fg(Color::White))
-        .block(Block::default().borders(Borders::ALL).title("Ruta"));
+        .block(Block::default().borders(Borders::ALL).title(input_title));
     frame.render_widget(input_block, chunks[2]);
 
-    if let InputMode::Adding | InputMode::Editing(_) = manager.input_mode {
-        frame.set_cursor(chunks[2].x + manager.input.len() as u16 + 1, chunks[2].y + 1);
+    if matches!(
+        manager.input_mode,
+        InputMode::AddingSource
+            | InputMode::AddingDestination { .. }
+            | InputMode::EditingSource(_)
+            | InputMode::EditingDestination { .. }
+    ) {
+        frame.set_cursor(
+            chunks[2].x + manager.input.len() as u16 + 1,
+            chunks[2].y + 1,
+        );
     }
 
     if let Some((message, color)) = &manager.message {
