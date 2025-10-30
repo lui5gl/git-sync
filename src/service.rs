@@ -1,4 +1,5 @@
 use crate::config::Config;
+use chrono::Local;
 use std::env;
 use std::fs::{self, File};
 use std::io::Write;
@@ -81,23 +82,26 @@ fn write_service_file(content: &str) -> Result<(), String> {
 }
 
 fn run_systemctl(args: &[&str]) {
+    let log_error = |message: String| {
+        let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
+        eprintln!("[{}] {}", timestamp, message);
+    };
+
     match Command::new("systemctl").args(args).status() {
-        Ok(status) if status.success() => {
-            println!("✅ systemctl {} se ejecutó correctamente", args.join(" "));
-        }
+        Ok(status) if status.success() => {}
         Ok(status) => {
-            eprintln!(
+            log_error(format!(
                 "⚠️ systemctl {} finalizó con el estado {}. Es posible que deba ejecutarlo manualmente.",
                 args.join(" "),
                 status
-            );
+            ));
         }
         Err(e) => {
-            eprintln!(
+            log_error(format!(
                 "❌ No se pudo ejecutar systemctl {}: {}. Ejecútelo manualmente si es necesario.",
                 args.join(" "),
                 e
-            );
+            ));
         }
     }
 }
