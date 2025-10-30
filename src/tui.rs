@@ -100,7 +100,7 @@ impl<'a> RepoManager<'a> {
         self.input_mode = InputMode::AddingSource;
         self.input.clear();
         self.set_message(
-            "📝 Introduce la ruta del repositorio a sincronizar",
+            "📝 Introduce la ruta local del repositorio a sincronizar (no la URL remota)",
             Color::Cyan,
         );
     }
@@ -110,7 +110,10 @@ impl<'a> RepoManager<'a> {
             if let Some(repo) = self.repos.get(index) {
                 self.input_mode = InputMode::EditingSource(index);
                 self.input = repo.repo_path.clone();
-                self.set_message("✏️ Actualiza la ruta del repositorio", Color::Cyan);
+                self.set_message(
+                    "✏️ Actualiza la ruta local del repositorio (no la URL remota)",
+                    Color::Cyan,
+                );
             }
         }
     }
@@ -185,7 +188,7 @@ impl<'a> RepoManager<'a> {
                 };
                 self.input = current_destination;
                 self.set_message(
-                    "📁 Actualiza la ruta de destino (opcional). Deja vacío para deshabilitar la compilación.",
+                    "📁 Actualiza la ruta de destino local (opcional). Deja vacío para deshabilitar la compilación.",
                     Color::Cyan,
                 );
             }
@@ -238,7 +241,7 @@ impl<'a> RepoManager<'a> {
         self.input_mode = InputMode::AddingDestination { source };
         self.input.clear();
         self.set_message(
-            "📦 Introduce la ruta de destino para desplegar el `dist` (Enter para confirmar, vacío para guardar como simple).",
+            "📦 Introduce la ruta local de destino para desplegar el `dist` (Enter para confirmar, vacío para guardar como simple).",
             Color::Cyan,
         );
     }
@@ -375,17 +378,19 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
             "🕹️ ↑/↓ mover • a añadir • e editar • d eliminar • Enter editar • q/Esc salir"
         }
         InputMode::AddingSource => {
-            "📝 Modo añadir (origen): escribe la ruta del repositorio y presiona Enter"
+            "📝 Modo añadir (origen): escribe la ruta local del repositorio (no la URL remota) y presiona Enter"
         }
         InputMode::ChoosingBuildType { .. } => {
             "🛠️ Selecciona si el proyecto requiere compilación: 1) No • 2) Sí • Esc cancelar"
         }
         InputMode::AddingDestination { .. } => {
-            "📦 Modo añadir (destino): escribe la ruta destino y presiona Enter, o deja vacío para guardar como simple"
+            "📦 Modo añadir (destino): escribe la ruta local de destino y presiona Enter, o deja vacío para guardar como simple"
         }
-        InputMode::EditingSource(_) => "✏️ Modo editar (origen): modifica la ruta y presiona Enter",
+        InputMode::EditingSource(_) => {
+            "✏️ Modo editar (origen): modifica la ruta local y presiona Enter"
+        }
         InputMode::EditingDestination { .. } => {
-            "📁 Modo editar (destino opcional): modifica la ruta destino y presiona Enter, o deja vacío"
+            "📁 Modo editar (destino opcional): modifica la ruta local de destino y presiona Enter, o deja vacío"
         }
     };
 
@@ -397,10 +402,10 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
     let (input_text, input_title) = match manager.input_mode {
         InputMode::Normal => ("".to_string(), "Ruta"),
         InputMode::AddingSource | InputMode::EditingSource(_) => {
-            (manager.input.clone(), "📂 Ruta origen")
+            (manager.input.clone(), "📂 Ruta origen (local)")
         }
         InputMode::AddingDestination { .. } | InputMode::EditingDestination { .. } => {
-            (manager.input.clone(), "📦 Ruta destino (opcional)")
+            (manager.input.clone(), "📦 Ruta destino local (opcional)")
         }
         InputMode::ChoosingBuildType { .. } => (
             "1️⃣ Sin build • 2️⃣ Ejecutar build y desplegar dist".to_string(),

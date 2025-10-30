@@ -116,6 +116,7 @@ impl Config {
     fn ensure_repos_file(&self) -> Result<bool, String> {
         if !Path::new(&self.repos_file).exists() {
             let default_content = "# Añada rutas absolutas de repositorios Git, una por línea\n\
+                                   # Use rutas locales del servidor (no URLs de GitHub/GitLab)\n\
                                    # Para proyectos que requieren compilar y desplegar, utilice:\n\
                                    # /ruta/al/proyecto => /ruta/destino\n\
                                    # Ejemplos:\n\
@@ -206,7 +207,7 @@ impl Config {
 
     pub fn write_repos(&self, repos: &[RepoDefinition]) -> Result<(), String> {
         let mut content = String::from("# Lista de repositorios administrada por git-sync\n");
-        content.push_str("# Especifique una ruta absoluta por línea\n");
+        content.push_str("# Especifique una ruta absoluta por línea (ruta local, no URL remota)\n");
         content.push_str("# Para proyectos que requieren build, utilice el formato:\n");
         content.push_str("#   /ruta/al/proyecto => /ruta/destino\n");
         for repo in repos {

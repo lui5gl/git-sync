@@ -84,7 +84,7 @@ Formato soportado:
 /home/deploy/repos/mi-app-vue => /var/www/html/mi-app
 ```
 
-- La ruta antes de `=>` debe ser un repositorio Git válido.
+- La ruta antes de `=>` debe ser la ruta absoluta a un repositorio Git válido ya clonado en el servidor.
 - La ruta después de `=>` es opcional. Cuando existe:
   1. Se ejecuta `git fetch`/`git pull` como siempre.
   2. Se ejecuta `bun|pnpm|yarn|npm run build` (prioridad según lockfile presente).
@@ -100,7 +100,7 @@ Ejecuta `sudo git-sync` (sin argumentos) para abrir la consola interactiva:
 
 - `↑/↓` navegar, `Enter` o `e` editar, `a` añadir, `d` eliminar, `q/Esc` salir.
 - Al añadir un repositorio:
-  1. Ingresas la ruta del repo.
+  1. Ingresas la ruta absoluta al directorio del repositorio **ya clonado** (no la URL remota).
   2. Elegís si requiere build (`1` = no, `2` = sí).
   3. Si elegiste build, se solicita la ruta de despliegue (vacía = lo convierte en repo simple).
 - Los mensajes de estado aparecen en la parte inferior con colores y emojis.

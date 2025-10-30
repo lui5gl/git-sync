@@ -39,6 +39,7 @@ fn print_help() {
     println!("    Configuración: 📄 /etc/git-sync/config.toml");
     println!("    Repositorios:  📂 /etc/git-sync/repositories.txt");
     println!("    Registros:     📝 /var/log/git-sync/git-sync.log");
+    println!("    ➤ Las rutas deben ser locales en el servidor (no URLs remotas).");
 }
 
 fn main() {
