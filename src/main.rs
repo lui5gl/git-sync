@@ -23,23 +23,39 @@ fn print_version() {
 }
 
 fn print_help() {
-    println!("ℹ️ git-sync v{}", VERSION);
-    println!("\n🧭 Servicio de sincronización de repositorios Git.");
-    println!("\n📘 USO:");
-    println!(
-        "    git-sync             # 🖥️ Abre la interfaz interactiva para gestionar repositorios (instala el servicio si es necesario)"
+    let help = format!(
+        r#"
+ℹ️ git-sync v{version}
+
+🧭 Servicio de sincronización de repositorios Git.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📘 Uso rápido
+  • git-sync
+      Abre la interfaz interactiva para gestionar repositorios
+      (instala el servicio si es necesario).
+  • git-sync daemon
+      Ejecuta el daemon de sincronización (pensado para systemd).
+  • git-sync uninstall-service
+      Detiene y elimina el servicio systemd.
+  • git-sync --help
+      Muestra esta ayuda.
+  • git-sync --version
+      Muestra la versión actual.
+
+🗂️ Archivos de configuración
+  • Configuración  → /etc/git-sync/config.toml
+  • Repositorios   → /etc/git-sync/repositories.txt
+  • Registros      → /var/log/git-sync/git-sync.log
+
+🛠️ Recuerde
+  • Utilice rutas locales del servidor (no URLs remotas).
+  • Revise los permisos de archivos si ejecuta como otro usuario.
+"#,
+        version = VERSION
     );
-    println!(
-        "    git-sync daemon      # 🔁 Ejecuta el daemon de sincronización (utilizado por systemd)"
-    );
-    println!("    git-sync uninstall-service  # 🧹 Detiene y elimina el servicio systemd");
-    println!("    git-sync --help      # ❓ Muestra esta ayuda");
-    println!("    git-sync --version   # 🔖 Muestra la versión actual");
-    println!("\n🗂️ ARCHIVOS DE CONFIGURACIÓN:");
-    println!("    Configuración: 📄 /etc/git-sync/config.toml");
-    println!("    Repositorios:  📂 /etc/git-sync/repositories.txt");
-    println!("    Registros:     📝 /var/log/git-sync/git-sync.log");
-    println!("    ➤ Las rutas deben ser locales en el servidor (no URLs remotas).");
+
+    println!("{}", help.trim_start());
 }
 
 fn main() {
