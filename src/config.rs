@@ -212,7 +212,9 @@ impl Config {
         content.push_str("#   /ruta/al/proyecto => /ruta/destino\n");
         content.push_str("# Ejemplos:\n");
         content.push_str("#   Proyecto sin compilación: /var/www/html/mi-app\n");
-        content.push_str("#   Proyecto con compilación: /root/proyects/mi-app => /var/www/html/mi-app/public\n");
+        content.push_str(
+            "#   Proyecto con compilación: /root/proyects/mi-app => /var/www/html/mi-app/public\n",
+        );
         for repo in repos {
             content.push_str(&repo.to_line());
             content.push('\n');

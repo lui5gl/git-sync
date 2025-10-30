@@ -16,8 +16,8 @@ use std::io::{Stdout, stdout};
 #[derive(Clone)]
 enum InputMode {
     Normal,
-    AddingSource,
-    ChoosingBuildType { source: String },
+    ChoosingBuildType,
+    AddingSource { requires_build: bool },
     AddingDestination { source: String },
     EditingSource(usize),
     EditingDestination { index: usize, source: String },
@@ -97,10 +97,10 @@ impl<'a> RepoManager<'a> {
     }
 
     fn start_add(&mut self) {
-        self.input_mode = InputMode::AddingSource;
+        self.input_mode = InputMode::ChoosingBuildType;
         self.input.clear();
         self.set_message(
-            "📝 Ruta local del repo (sin compilación: /var/www/html/mi-app • con compilación: /root/proyects/mi-app)",
+            "🛠️ ¿Requiere compilación? 1) No (sin compilación) • 2) Sí (con compilación: fuente /root/proyects → destino /var/www/html/...)",
             Color::Cyan,
         );
     }
@@ -137,19 +137,16 @@ impl<'a> RepoManager<'a> {
     fn submit(&mut self) -> Result<(), String> {
         let input_value = self.input.trim().to_string();
         match self.input_mode.clone() {
-            InputMode::AddingSource => {
+            InputMode::AddingSource { requires_build } => {
                 if input_value.is_empty() {
                     self.set_message("La ruta del repositorio no puede estar vacía", Color::Red);
                     return Ok(());
                 }
-                self.input_mode = InputMode::ChoosingBuildType {
-                    source: input_value.clone(),
-                };
-                self.input.clear();
-                self.set_message(
-                    "🛠️ ¿Requiere compilación? 1) No (sin compilación) • 2) Sí (con compilación: fuente /root/proyects → destino /var/www/html/...)",
-                    Color::Cyan,
-                );
+                if requires_build {
+                    self.begin_destination_input(input_value);
+                } else {
+                    return self.finalize_simple_repo(input_value);
+                }
             }
             InputMode::AddingDestination { source } => {
                 if input_value.is_empty() {
@@ -166,7 +163,7 @@ impl<'a> RepoManager<'a> {
                 self.input_mode = InputMode::Normal;
                 self.input.clear();
             }
-            InputMode::ChoosingBuildType { .. } => {}
+            InputMode::ChoosingBuildType => {}
             InputMode::EditingSource(index) => {
                 if input_value.is_empty() {
                     self.set_message(
@@ -224,6 +221,22 @@ impl<'a> RepoManager<'a> {
         }
 
         Ok(())
+    }
+
+    fn begin_source_input(&mut self, requires_build: bool) {
+        self.input_mode = InputMode::AddingSource { requires_build };
+        self.input.clear();
+        if requires_build {
+            self.set_message(
+                "📝 Ruta origen del proyecto a compilar (ej. /root/proyects/mi-app)",
+                Color::Cyan,
+            );
+        } else {
+            self.set_message(
+                "📝 Ruta del repositorio sin compilación (ej. /var/www/html/mi-app)",
+                Color::Cyan,
+            );
+        }
     }
 
     fn finalize_simple_repo(&mut self, source: String) -> Result<(), String> {
@@ -298,17 +311,17 @@ fn run_loop(
                         KeyCode::Up => manager.select_previous(),
                         _ => {}
                     },
-                    InputMode::ChoosingBuildType { source } => match code {
+                    InputMode::ChoosingBuildType => match code {
                         KeyCode::Char('1') | KeyCode::Char('n') | KeyCode::Char('N') => {
-                            manager.finalize_simple_repo(source)?
+                            manager.begin_source_input(false)
                         }
                         KeyCode::Char('2') | KeyCode::Char('s') | KeyCode::Char('S') => {
-                            manager.begin_destination_input(source)
+                            manager.begin_source_input(true)
                         }
                         KeyCode::Esc => manager.cancel_input(),
                         _ => {}
                     },
-                    InputMode::AddingSource
+                    InputMode::AddingSource { .. }
                     | InputMode::AddingDestination { .. }
                     | InputMode::EditingSource(_)
                     | InputMode::EditingDestination { .. } => match code {
@@ -377,21 +390,24 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         InputMode::Normal => {
             "🕹️ ↑/↓ mover • a añadir • e editar • d eliminar • Enter editar • q/Esc salir"
         }
-        InputMode::AddingSource => {
-            "📝 Escribe la ruta local (sin compilación: /var/www/html/mi-app • con compilación: /root/proyects/mi-app) y Enter"
+        InputMode::AddingSource {
+            requires_build: false,
+        } => {
+            "📝 Escribe la ruta del repositorio sin compilación (ej. /var/www/html/mi-app) y Enter"
         }
-        InputMode::ChoosingBuildType { .. } => {
+        InputMode::AddingSource {
+            requires_build: true,
+        } => {
+            "📝 Escribe la ruta origen del proyecto a compilar (ej. /root/proyects/mi-app) y Enter"
+        }
+        InputMode::ChoosingBuildType => {
             "🛠️ 1) No (sin compilación) • 2) Sí (con compilación: fuente /root/proyects → destino /var/www/html/...) • Esc cancelar"
         }
         InputMode::AddingDestination { .. } => {
             "📦 Escribe la ruta destino compilada (ej. /var/www/html/mi-app/public) o deja vacío"
         }
-        InputMode::EditingSource(_) => {
-            "✏️ Ajusta la ruta local y presiona Enter"
-        }
-        InputMode::EditingDestination { .. } => {
-            "📁 Ajusta la ruta destino local o deja vacío"
-        }
+        InputMode::EditingSource(_) => "✏️ Ajusta la ruta local y presiona Enter",
+        InputMode::EditingDestination { .. } => "📁 Ajusta la ruta destino local o deja vacío",
     };
 
     let instruction_paragraph = Paragraph::new(instructions)
@@ -401,19 +417,27 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
 
     let (input_text, input_title) = match manager.input_mode {
         InputMode::Normal => ("".to_string(), "Ruta"),
-        InputMode::AddingSource | InputMode::EditingSource(_) => {
-            (
-                manager.input.clone(),
-                "📂 Ruta origen (sin compilación: /var/www/html/mi-app • con compilación: /root/proyects/mi-app)",
-            )
-        }
-        InputMode::AddingDestination { .. } | InputMode::EditingDestination { .. } => {
-            (
-                manager.input.clone(),
-                "📦 Ruta destino (ej. /var/www/html/mi-app/public)",
-            )
-        }
-        InputMode::ChoosingBuildType { .. } => (
+        InputMode::AddingSource {
+            requires_build: false,
+        } => (
+            manager.input.clone(),
+            "📂 Ruta origen sin compilación (ej. /var/www/html/mi-app)",
+        ),
+        InputMode::AddingSource {
+            requires_build: true,
+        } => (
+            manager.input.clone(),
+            "📂 Ruta origen para compilar (ej. /root/proyects/mi-app)",
+        ),
+        InputMode::EditingSource(_) => (
+            manager.input.clone(),
+            "📂 Ruta origen (sin compilación: /var/www/html/mi-app • con compilación: /root/proyects/mi-app)",
+        ),
+        InputMode::AddingDestination { .. } | InputMode::EditingDestination { .. } => (
+            manager.input.clone(),
+            "📦 Ruta destino (ej. /var/www/html/mi-app/public)",
+        ),
+        InputMode::ChoosingBuildType => (
             "1️⃣ Sin compilación • 2️⃣ Con compilación (deploy dist/)".to_string(),
             "🛠️ Tipo de proyecto",
         ),
@@ -425,7 +449,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
 
     if matches!(
         manager.input_mode,
-        InputMode::AddingSource
+        InputMode::AddingSource { .. }
             | InputMode::AddingDestination { .. }
             | InputMode::EditingSource(_)
             | InputMode::EditingDestination { .. }
