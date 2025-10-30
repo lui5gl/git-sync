@@ -22,7 +22,7 @@ La herramienta se ejecuta en el entorno local del usuario, opera de manera indep
 - Registro detallado en `/var/log/git-sync/git-sync.log`
 - Interrupción inmediata ante errores (ideal para tareas programadas)
 - Recarga dinámica de la configuración sin reinicios manuales
-- Despliegue opcional de proyectos Node/Vue: ejecuta `npm run build` y copia `dist` al destino elegido
+- Despliegue opcional de proyectos Node/Vue: detecta `bun`/`pnpm`/`yarn` y cae en `npm` para ejecutar el build y copiar `dist` al destino elegido
 
 ## Instalación
 

@@ -175,23 +175,7 @@ impl<'a> RepoProcessor<'a> {
     }
 
     fn build_and_deploy(&self, repo_path: &str, destination: &str) -> Result<(), String> {
-        if self.verbose {
-            self.logger.log_line("Ejecutando `npm run build`...");
-        }
-
-        let status = std::process::Command::new("npm")
-            .current_dir(repo_path)
-            .arg("run")
-            .arg("build")
-            .status()
-            .map_err(|e| format!("No se pudo ejecutar `npm run build`: {}", e))?;
-
-        if !status.success() {
-            return Err(format!(
-                "`npm run build` finalizó con estado {}",
-                status.code().unwrap_or(-1)
-            ));
-        }
+        self.run_build(repo_path)?;
 
         let dist_path = Path::new(repo_path).join("dist");
         if !dist_path.exists() {
@@ -299,5 +283,98 @@ impl<'a> RepoProcessor<'a> {
         }
 
         Ok(())
+    }
+
+    fn run_build(&self, repo_path: &str) -> Result<(), String> {
+        let manager = self.detect_package_manager(Path::new(repo_path));
+        if self.verbose {
+            self.logger.log_line(&format!(
+                "Ejecutando build con {}...",
+                manager.display_name()
+            ));
+        }
+
+        let mut command = manager.build_command();
+        let args = manager.build_args();
+        command.current_dir(repo_path).args(args);
+
+        let status = command
+            .status()
+            .map_err(|e| format!("No se pudo ejecutar `{}`: {}", manager.command_preview(), e))?;
+
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "`{}` finalizó con estado {}",
+                manager.command_preview(),
+                status.code().unwrap_or(-1)
+            ))
+        }
+    }
+
+    fn detect_package_manager(&self, repo_path: &Path) -> PackageManager {
+        let bun_lock = repo_path.join("bun.lockb");
+        let bunfig = repo_path.join("bunfig.toml");
+        if bun_lock.exists() || bunfig.exists() {
+            return PackageManager::Bun;
+        }
+
+        let pnpm_lock = repo_path.join("pnpm-lock.yaml");
+        if pnpm_lock.exists() {
+            return PackageManager::Pnpm;
+        }
+
+        let yarn_lock = repo_path.join("yarn.lock");
+        if yarn_lock.exists() {
+            return PackageManager::Yarn;
+        }
+
+        PackageManager::Npm
+    }
+}
+
+enum PackageManager {
+    Bun,
+    Pnpm,
+    Yarn,
+    Npm,
+}
+
+impl PackageManager {
+    fn build_command(&self) -> std::process::Command {
+        match self {
+            PackageManager::Bun => std::process::Command::new("bun"),
+            PackageManager::Pnpm => std::process::Command::new("pnpm"),
+            PackageManager::Yarn => std::process::Command::new("yarn"),
+            PackageManager::Npm => std::process::Command::new("npm"),
+        }
+    }
+
+    fn build_args(&self) -> Vec<&'static str> {
+        match self {
+            PackageManager::Bun => vec!["run", "build"],
+            PackageManager::Pnpm => vec!["run", "build"],
+            PackageManager::Yarn => vec!["build"],
+            PackageManager::Npm => vec!["run", "build"],
+        }
+    }
+
+    fn display_name(&self) -> &'static str {
+        match self {
+            PackageManager::Bun => "bun",
+            PackageManager::Pnpm => "pnpm",
+            PackageManager::Yarn => "yarn",
+            PackageManager::Npm => "npm",
+        }
+    }
+
+    fn command_preview(&self) -> &'static str {
+        match self {
+            PackageManager::Bun => "bun run build",
+            PackageManager::Pnpm => "pnpm run build",
+            PackageManager::Yarn => "yarn build",
+            PackageManager::Npm => "npm run build",
+        }
     }
 }
