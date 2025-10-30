@@ -29,7 +29,7 @@ sudo git-sync          # Primera ejecución: crea la configuración y abre la TU
 
 ### Usar un release publicado
 
-1. Descarga el artefacto deseado desde la sección **Releases**.
+1. Descarga el artefacto deseado desde la sección **Releases** (versión 4.2.0).
 2. Descomprime y mueve el binario a tu `PATH`:
 
 ```bash
