@@ -17,15 +17,17 @@ impl<'a> RepoProcessor<'a> {
     pub fn process_all(&self, repo_defs: Vec<RepoDefinition>) -> Result<(), String> {
         if repo_defs.is_empty() {
             self.logger
-                .log_line("No se encontraron repositorios en el archivo de configuración.");
+                .log_line("⚠️ No se encontraron repositorios en el archivo de configuración.");
             self.logger
-                .log_line("Agregue las rutas de los repositorios, una por línea.");
+                .log_line("👉 Agregue las rutas de los repositorios, una por línea.");
             return Err("No hay repositorios configurados".to_string());
         }
 
         if self.verbose {
-            self.logger
-                .log_line(&format!("Se analizarán {} repositorios\n", repo_defs.len()));
+            self.logger.log_line(&format!(
+                "📦 Se analizarán {} repositorios\n",
+                repo_defs.len()
+            ));
         }
 
         let mut errors: Vec<(String, String)> = Vec::new();
@@ -40,7 +42,7 @@ impl<'a> RepoProcessor<'a> {
                 Err(err) => {
                     errors.push((repo.repo_path.clone(), err.clone()));
                     self.logger.log_line(&format!(
-                        "Repositorio omitido {} debido a un error: {}",
+                        "⚠️ Repositorio omitido {} debido a un error: {}",
                         repo.repo_path, err
                     ));
                 }
@@ -49,7 +51,7 @@ impl<'a> RepoProcessor<'a> {
 
         if self.verbose {
             self.logger
-                .log_line("Todos los repositorios fueron procesados.");
+                .log_line("🎉 Todos los repositorios fueron procesados.");
         }
 
         if errors.is_empty() {
@@ -74,12 +76,12 @@ impl<'a> RepoProcessor<'a> {
                 .log_line("==========================================");
             match &repo.deploy_target {
                 Some(target) => self.logger.log_line(&format!(
-                    "Procesando repositorio con build: {} -> {}",
+                    "🛠️ Procesando repositorio con build: {} -> {}",
                     repo.repo_path, target
                 )),
                 None => self
                     .logger
-                    .log_line(&format!("Procesando repositorio: {}", repo.repo_path)),
+                    .log_line(&format!("🔄 Procesando repositorio: {}", repo.repo_path)),
             }
             self.logger
                 .log_line("==========================================");
@@ -97,14 +99,14 @@ impl<'a> RepoProcessor<'a> {
 
     fn validate_repo(&self, repo_path: &str) -> Result<(), String> {
         if !Path::new(repo_path).exists() {
-            let msg = format!("La ruta no existe: {}", repo_path);
+            let msg = format!("❌ La ruta no existe: {}", repo_path);
             self.logger.log_error(&msg);
             return Err(msg);
         }
 
         if !Path::new(&format!("{}/.git", repo_path)).exists() {
             let msg = format!(
-                "El directorio no es un repositorio Git válido: {}",
+                "❌ El directorio no es un repositorio Git válido: {}",
                 repo_path
             );
             self.logger.log_error(&msg);
@@ -118,12 +120,13 @@ impl<'a> RepoProcessor<'a> {
         let repo = GitRepo::new(repo_path.to_string());
 
         if self.verbose {
-            self.logger.log_line("Verificando el estado del remoto...");
+            self.logger
+                .log_line("🔍 Verificando el estado del remoto...");
         }
 
         // Obtener cambios del remoto
         if let Err(e) = repo.fetch() {
-            let msg = format!("No se pudo ejecutar `git fetch`: {}", e);
+            let msg = format!("❌ No se pudo ejecutar `git fetch`: {}", e);
             self.logger.log_error(&msg);
             return Err(msg);
         }
@@ -139,13 +142,14 @@ impl<'a> RepoProcessor<'a> {
         match repo.count_commits_behind(&branch) {
             Ok(0) => {
                 if self.verbose {
-                    self.logger.log_line("El repositorio ya está actualizado.");
+                    self.logger
+                        .log_line("✅ El repositorio ya está actualizado.");
                 }
             }
             Ok(count) => {
                 if self.verbose {
                     self.logger.log_line(&format!(
-                        "El remoto tiene {} confirmaciones nuevas. Aplicando cambios...",
+                        "⬇️ El remoto tiene {} confirmaciones nuevas. Aplicando cambios...",
                         count
                     ));
                 }
@@ -153,19 +157,21 @@ impl<'a> RepoProcessor<'a> {
                 match repo.pull(&branch) {
                     Ok(output) => {
                         if self.verbose {
-                            self.logger
-                                .log_line(&format!("Resultado de `git pull`:\n{}", output.trim()));
+                            self.logger.log_line(&format!(
+                                "📥 Resultado de `git pull`:\n{}",
+                                output.trim()
+                            ));
                         }
                     }
                     Err(e) => {
-                        let msg = format!("No se pudo ejecutar `git pull`: {}", e);
+                        let msg = format!("❌ No se pudo ejecutar `git pull`: {}", e);
                         self.logger.log_error(&msg);
                         return Err(msg);
                     }
                 }
             }
             Err(e) => {
-                let msg = format!("No se pudo consultar el estado del repositorio: {}", e);
+                let msg = format!("❌ No se pudo consultar el estado del repositorio: {}", e);
                 self.logger.log_error(&msg);
                 return Err(msg);
             }
@@ -180,7 +186,7 @@ impl<'a> RepoProcessor<'a> {
         let dist_path = Path::new(repo_path).join("dist");
         if !dist_path.exists() {
             return Err(format!(
-                "No se encontró el directorio de salida en {}",
+                "❗ No se encontró el directorio de salida en {}",
                 dist_path.display()
             ));
         }
@@ -189,7 +195,7 @@ impl<'a> RepoProcessor<'a> {
         if destination_path.exists() {
             fs::remove_dir_all(&destination_path).map_err(|e| {
                 format!(
-                    "No se pudo limpiar el destino {}: {}",
+                    "❌ No se pudo limpiar el destino {}: {}",
                     destination_path.display(),
                     e
                 )
@@ -198,7 +204,7 @@ impl<'a> RepoProcessor<'a> {
 
         fs::create_dir_all(&destination_path).map_err(|e| {
             format!(
-                "No se pudo crear el directorio destino {}: {}",
+                "❌ No se pudo crear el directorio destino {}: {}",
                 destination_path.display(),
                 e
             )
@@ -208,7 +214,7 @@ impl<'a> RepoProcessor<'a> {
 
         if self.verbose {
             self.logger.log_line(&format!(
-                "Archivos desplegados en {}",
+                "🚀 Archivos desplegados en {}",
                 destination_path.display()
             ));
         }
@@ -218,25 +224,33 @@ impl<'a> RepoProcessor<'a> {
 
     fn copy_recursive(&self, source: &Path, destination: &Path) -> Result<(), String> {
         if source.is_dir() {
-            for entry in fs::read_dir(source)
-                .map_err(|e| format!("No se pudo leer el directorio {}: {}", source.display(), e))?
-            {
+            for entry in fs::read_dir(source).map_err(|e| {
+                format!(
+                    "❌ No se pudo leer el directorio {}: {}",
+                    source.display(),
+                    e
+                )
+            })? {
                 let entry = entry.map_err(|e| {
                     format!(
-                        "No se pudo procesar una entrada en {}: {}",
+                        "❌ No se pudo procesar una entrada en {}: {}",
                         source.display(),
                         e
                     )
                 })?;
                 let file_type = entry.file_type().map_err(|e| {
-                    format!("No se pudo determinar el tipo de {:?}: {}", entry.path(), e)
+                    format!(
+                        "❌ No se pudo determinar el tipo de {:?}: {}",
+                        entry.path(),
+                        e
+                    )
                 })?;
 
                 let dest_path = destination.join(entry.file_name());
                 if file_type.is_dir() {
                     fs::create_dir_all(&dest_path).map_err(|e| {
                         format!(
-                            "No se pudo crear el directorio {}: {}",
+                            "❌ No se pudo crear el directorio {}: {}",
                             dest_path.display(),
                             e
                         )
@@ -245,7 +259,7 @@ impl<'a> RepoProcessor<'a> {
                 } else if file_type.is_file() {
                     fs::copy(entry.path(), &dest_path).map_err(|e| {
                         format!(
-                            "No se pudo copiar {} a {}: {}",
+                            "❌ No se pudo copiar {} a {}: {}",
                             entry.path().display(),
                             dest_path.display(),
                             e
@@ -257,14 +271,14 @@ impl<'a> RepoProcessor<'a> {
                         use std::os::unix::fs as unix_fs;
                         let target = fs::read_link(entry.path()).map_err(|e| {
                             format!(
-                                "No se pudo leer el enlace simbólico {}: {}",
+                                "❌ No se pudo leer el enlace simbólico {}: {}",
                                 entry.path().display(),
                                 e
                             )
                         })?;
                         unix_fs::symlink(target, &dest_path).map_err(|e| {
                             format!(
-                                "No se pudo recrear el enlace simbólico {}: {}",
+                                "❌ No se pudo recrear el enlace simbólico {}: {}",
                                 dest_path.display(),
                                 e
                             )
@@ -274,7 +288,7 @@ impl<'a> RepoProcessor<'a> {
                     #[cfg(not(unix))]
                     {
                         return Err(format!(
-                            "Los enlaces simbólicos no son compatibles en este sistema: {}",
+                            "❌ Los enlaces simbólicos no son compatibles en este sistema: {}",
                             entry.path().display()
                         ));
                     }
@@ -289,7 +303,7 @@ impl<'a> RepoProcessor<'a> {
         let manager = self.detect_package_manager(Path::new(repo_path));
         if self.verbose {
             self.logger.log_line(&format!(
-                "Ejecutando build con {}...",
+                "🧰 Ejecutando build con {}...",
                 manager.display_name()
             ));
         }
@@ -298,15 +312,19 @@ impl<'a> RepoProcessor<'a> {
         let args = manager.build_args();
         command.current_dir(repo_path).args(args);
 
-        let status = command
-            .status()
-            .map_err(|e| format!("No se pudo ejecutar `{}`: {}", manager.command_preview(), e))?;
+        let status = command.status().map_err(|e| {
+            format!(
+                "❌ No se pudo ejecutar `{}`: {}",
+                manager.command_preview(),
+                e
+            )
+        })?;
 
         if status.success() {
             Ok(())
         } else {
             Err(format!(
-                "`{}` finalizó con estado {}",
+                "❌ `{}` finalizó con estado {}",
                 manager.command_preview(),
                 status.code().unwrap_or(-1)
             ))

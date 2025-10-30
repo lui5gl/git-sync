@@ -45,14 +45,14 @@ impl Settings {
                     Ok(settings) => return settings,
                     Err(e) => {
                         eprintln!(
-                            "Error al interpretar config.toml: {}. Se utilizarán los valores predeterminados.",
+                            "⚠️ Error al interpretar config.toml: {}. Se utilizarán los valores predeterminados.",
                             e
                         );
                     }
                 },
                 Err(e) => {
                     eprintln!(
-                        "Error al leer config.toml: {}. Se utilizarán los valores predeterminados.",
+                        "⚠️ Error al leer config.toml: {}. Se utilizarán los valores predeterminados.",
                         e
                     );
                 }
@@ -62,12 +62,12 @@ impl Settings {
         // Crear archivo con valores por defecto
         let default_settings = Settings::default();
         let toml_string = toml::to_string_pretty(&default_settings)
-            .expect("No se pudo serializar la configuración predeterminada");
+            .expect("❌ No se pudo serializar la configuración predeterminada");
 
         if let Err(e) = fs::write(config_file, &toml_string) {
-            eprintln!("No se pudo crear config.toml: {}", e);
+            eprintln!("❌ No se pudo crear config.toml: {}", e);
         } else {
-            println!("Archivo de configuración creado: {}", config_file);
+            println!("⚙️ Archivo de configuración creado: {}", config_file);
         }
 
         default_settings
@@ -79,7 +79,7 @@ impl Settings {
                 let was_verbose = self.verbose;
                 *self = new_settings;
                 if was_verbose && self.verbose {
-                    println!("Configuración recargada");
+                    println!("🔄 Configuración recargada");
                 }
             }
         }

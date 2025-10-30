@@ -19,26 +19,26 @@ use tui::run_repo_manager;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn print_version() {
-    println!("git-sync v{}", VERSION);
+    println!("ℹ️ git-sync v{}", VERSION);
 }
 
 fn print_help() {
-    println!("git-sync v{}", VERSION);
-    println!("\nServicio de sincronización de repositorios Git.");
-    println!("\nUSO:");
+    println!("ℹ️ git-sync v{}", VERSION);
+    println!("\n🧭 Servicio de sincronización de repositorios Git.");
+    println!("\n📘 USO:");
     println!(
-        "    git-sync             # Abre la interfaz interactiva para gestionar repositorios (instala el servicio si es necesario)"
+        "    git-sync             # 🖥️ Abre la interfaz interactiva para gestionar repositorios (instala el servicio si es necesario)"
     );
     println!(
-        "    git-sync daemon      # Ejecuta el daemon de sincronización (utilizado por systemd)"
+        "    git-sync daemon      # 🔁 Ejecuta el daemon de sincronización (utilizado por systemd)"
     );
-    println!("    git-sync uninstall-service  # Detiene y elimina el servicio systemd");
-    println!("    git-sync --help      # Muestra esta ayuda");
-    println!("    git-sync --version   # Muestra la versión actual");
-    println!("\nARCHIVOS DE CONFIGURACIÓN:");
-    println!("    Configuración: /etc/git-sync/config.toml");
-    println!("    Repositorios:  /etc/git-sync/repositories.txt");
-    println!("    Registros:     /var/log/git-sync/git-sync.log");
+    println!("    git-sync uninstall-service  # 🧹 Detiene y elimina el servicio systemd");
+    println!("    git-sync --help      # ❓ Muestra esta ayuda");
+    println!("    git-sync --version   # 🔖 Muestra la versión actual");
+    println!("\n🗂️ ARCHIVOS DE CONFIGURACIÓN:");
+    println!("    Configuración: 📄 /etc/git-sync/config.toml");
+    println!("    Repositorios:  📂 /etc/git-sync/repositories.txt");
+    println!("    Registros:     📝 /var/log/git-sync/git-sync.log");
 }
 
 fn main() {
@@ -60,14 +60,14 @@ fn main() {
         }
         Some("uninstall-service") => {
             if let Err(err) = uninstall_service() {
-                eprintln!("No se pudo desinstalar el servicio: {}", err);
+                eprintln!("❌ No se pudo desinstalar el servicio: {}", err);
                 std::process::exit(1);
             }
             return;
         }
         Some(other) => {
-            eprintln!("Opción desconocida: {}", other);
-            eprintln!("Utilice --help para consultar los comandos disponibles.");
+            eprintln!("⚠️ Opción desconocida: {}", other);
+            eprintln!("👉 Utilice --help para consultar los comandos disponibles.");
             std::process::exit(1);
         }
         None => {}
@@ -76,22 +76,22 @@ fn main() {
     // Sin argumentos: instalar el servicio y abrir la TUI
     if let Err(err) = install_service() {
         eprintln!(
-            "No fue posible instalar o habilitar el servicio automáticamente: {}",
+            "⚠️ No fue posible instalar o habilitar el servicio automáticamente: {}",
             err
         );
-        eprintln!("Ejecute `sudo git-sync daemon` o complete la instalación de forma manual.");
+        eprintln!("👉 Ejecute `sudo git-sync daemon` o complete la instalación de forma manual.");
     }
 
     match config.ensure_exists() {
         Ok(_) => {}
         Err(err) => {
-            eprintln!("{}", err);
+            eprintln!("❌ {}", err);
             std::process::exit(1);
         }
     }
 
     if let Err(err) = run_repo_manager(&config) {
-        eprintln!("Error al ejecutar el gestor de repositorios: {}", err);
+        eprintln!("❌ Error al ejecutar el gestor de repositorios: {}", err);
         std::process::exit(1);
     }
 }
@@ -100,7 +100,7 @@ fn run_daemon(config: Config) {
     let repos_created = match config.ensure_exists() {
         Ok(created) => created,
         Err(err) => {
-            eprintln!("{}", err);
+            eprintln!("❌ {}", err);
             std::process::exit(1);
         }
     };
@@ -114,19 +114,22 @@ fn run_daemon(config: Config) {
 
     if settings.verbose {
         logger.log_line("=================================================");
-        logger.log_line("Git Sync - Daemon de sincronización de repositorios");
+        logger.log_line("🚀 Git Sync - Daemon de sincronización de repositorios");
         logger.log_line("=================================================");
         logger.log_line(&format!(
-            "Intervalo de sincronización: {} segundos",
+            "⏱️ Intervalo de sincronización: {} segundos",
             settings.sync_interval
         ));
-        logger.log_line(&format!("Detener ante error: {}", settings.stop_on_error));
         logger.log_line(&format!(
-            "Tiempo de espera para Git: {} segundos",
+            "🛑 Detener ante error: {}",
+            settings.stop_on_error
+        ));
+        logger.log_line(&format!(
+            "⌛ Tiempo de espera para Git: {} segundos",
             settings.git_timeout
         ));
-        logger.log_line(&format!("Reintentos máximos: {}", settings.max_retries));
-        logger.log_line(&format!("Modo continuo: {}\n", settings.continuous_mode));
+        logger.log_line(&format!("🔁 Reintentos máximos: {}", settings.max_retries));
+        logger.log_line(&format!("♾️ Modo continuo: {}\n", settings.continuous_mode));
     }
 
     if !settings.continuous_mode {
@@ -139,7 +142,7 @@ fn run_daemon(config: Config) {
 
         if settings.verbose {
             logger.log_line(&format!(
-                "\nEn espera de {} segundos antes del siguiente ciclo...\n",
+                "\n⏳ En espera de {} segundos antes del siguiente ciclo...\n",
                 settings.sync_interval
             ));
         }
@@ -156,13 +159,13 @@ fn run_sync_cycle(config: &Config, logger: &Logger, settings: &Settings) {
     match processor.process_all(repos) {
         Ok(_) => {
             if settings.verbose {
-                logger.log_line("\nCiclo completado correctamente.");
+                logger.log_line("\n✅ Ciclo completado correctamente.");
             }
         }
         Err(e) => {
             logger.log_error(&e.to_string());
             if settings.stop_on_error {
-                logger.log_error("Finalización por error (stop_on_error=true)");
+                logger.log_error("🛑 Finalización por error (stop_on_error=true)");
                 std::process::exit(1);
             }
         }

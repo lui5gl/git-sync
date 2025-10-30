@@ -41,7 +41,7 @@ fn resolve_service_user() -> Result<(String, String), String> {
     }
 
     Err(
-        "No fue posible determinar la información del usuario para instalar el servicio"
+        "❌ No fue posible determinar la información del usuario para instalar el servicio"
             .to_string(),
     )
 }
@@ -49,22 +49,22 @@ fn resolve_service_user() -> Result<(String, String), String> {
 fn write_service_file(content: &str) -> Result<(), String> {
     let parent = Path::new(SERVICE_PATH)
         .parent()
-        .ok_or_else(|| "La ruta del servicio no es válida".to_string())?;
+        .ok_or_else(|| "❌ La ruta del servicio no es válida".to_string())?;
 
     if !parent.exists() {
         return Err(format!(
-            "El directorio del servicio {} no existe. ¿El sistema utiliza systemd?",
+            "❌ El directorio del servicio {} no existe. ¿El sistema utiliza systemd?",
             parent.display()
         ));
     }
 
     let mut file = File::create(SERVICE_PATH)
-        .map_err(|e| format!("No se pudo crear el archivo de servicio: {}", e))?;
+        .map_err(|e| format!("❌ No se pudo crear el archivo de servicio: {}", e))?;
     file.write_all(content.as_bytes())
-        .map_err(|e| format!("No se pudo escribir el archivo de servicio: {}", e))?;
+        .map_err(|e| format!("❌ No se pudo escribir el archivo de servicio: {}", e))?;
     file.sync_all().map_err(|e| {
         format!(
-            "No se pudo sincronizar el archivo de servicio en disco: {}",
+            "❌ No se pudo sincronizar el archivo de servicio en disco: {}",
             e
         )
     })?;
@@ -72,7 +72,7 @@ fn write_service_file(content: &str) -> Result<(), String> {
     let permissions = fs::Permissions::from_mode(0o644);
     fs::set_permissions(SERVICE_PATH, permissions).map_err(|e| {
         format!(
-            "No se pudieron asignar permisos al archivo de servicio: {}",
+            "❌ No se pudieron asignar permisos al archivo de servicio: {}",
             e
         )
     })?;
@@ -83,18 +83,18 @@ fn write_service_file(content: &str) -> Result<(), String> {
 fn run_systemctl(args: &[&str]) {
     match Command::new("systemctl").args(args).status() {
         Ok(status) if status.success() => {
-            println!("systemctl {} se ejecutó correctamente", args.join(" "));
+            println!("✅ systemctl {} se ejecutó correctamente", args.join(" "));
         }
         Ok(status) => {
             eprintln!(
-                "systemctl {} finalizó con el estado {}. Es posible que deba ejecutarlo manualmente.",
+                "⚠️ systemctl {} finalizó con el estado {}. Es posible que deba ejecutarlo manualmente.",
                 args.join(" "),
                 status
             );
         }
         Err(e) => {
             eprintln!(
-                "No se pudo ejecutar systemctl {}: {}. Ejecútelo manualmente si es necesario.",
+                "❌ No se pudo ejecutar systemctl {}: {}. Ejecútelo manualmente si es necesario.",
                 args.join(" "),
                 e
             );
@@ -107,13 +107,13 @@ fn chown_path(path: &str, username: &str) -> Result<(), String> {
         .arg(format!("{}:{}", username, username))
         .arg(path)
         .status()
-        .map_err(|e| format!("No se pudo cambiar la propiedad de {}: {}", path, e))?;
+        .map_err(|e| format!("❌ No se pudo cambiar la propiedad de {}: {}", path, e))?;
 
     if status.success() {
         Ok(())
     } else {
         Err(format!(
-            "El comando chown para {} finalizó con el estado {}",
+            "❌ El comando chown para {} finalizó con el estado {}",
             path, status
         ))
     }
@@ -124,18 +124,22 @@ pub fn install_service() -> Result<(), String> {
         return Ok(());
     }
 
-    let exe_path = env::current_exe()
-        .map_err(|e| format!("No se pudo determinar la ruta del ejecutable actual: {}", e))?;
-    let exec_display = exe_path
-        .to_str()
-        .ok_or_else(|| "La ruta del ejecutable contiene caracteres UTF-8 no válidos".to_string())?;
+    let exe_path = env::current_exe().map_err(|e| {
+        format!(
+            "❌ No se pudo determinar la ruta del ejecutable actual: {}",
+            e
+        )
+    })?;
+    let exec_display = exe_path.to_str().ok_or_else(|| {
+        "❌ La ruta del ejecutable contiene caracteres UTF-8 no válidos".to_string()
+    })?;
 
     let (username, home_dir) = resolve_service_user()?;
     let config = Config::new();
 
     let _ = config.ensure_exists().map_err(|e| {
         format!(
-            "No se pudo inicializar la estructura de configuración: {}",
+            "❌ No se pudo inicializar la estructura de configuración: {}",
             e
         )
     })?;
@@ -157,19 +161,19 @@ pub fn install_service() -> Result<(), String> {
 
 pub fn uninstall_service() -> Result<(), String> {
     if !Path::new(SERVICE_PATH).exists() {
-        return Err("El servicio git-sync no está instalado".to_string());
+        return Err("ℹ️ El servicio git-sync no está instalado".to_string());
     }
 
     run_systemctl(&["disable", "--now", SERVICE_NAME]);
 
     fs::remove_file(SERVICE_PATH)
-        .map_err(|e| format!("No se pudo eliminar el archivo de servicio: {}", e))?;
+        .map_err(|e| format!("❌ No se pudo eliminar el archivo de servicio: {}", e))?;
 
     run_systemctl(&["daemon-reload"]);
 
-    println!("Archivo de servicio eliminado: {}", SERVICE_PATH);
+    println!("🗑️ Archivo de servicio eliminado: {}", SERVICE_PATH);
     println!(
-        "Verifique la eliminación del servicio con: sudo systemctl status {}",
+        "🔍 Verifique la eliminación del servicio con: sudo systemctl status {}",
         SERVICE_NAME
     );
 

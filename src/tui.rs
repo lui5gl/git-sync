@@ -100,7 +100,7 @@ impl<'a> RepoManager<'a> {
         self.input_mode = InputMode::AddingSource;
         self.input.clear();
         self.set_message(
-            "Introduce la ruta del repositorio a sincronizar",
+            "📝 Introduce la ruta del repositorio a sincronizar",
             Color::Cyan,
         );
     }
@@ -110,7 +110,7 @@ impl<'a> RepoManager<'a> {
             if let Some(repo) = self.repos.get(index) {
                 self.input_mode = InputMode::EditingSource(index);
                 self.input = repo.repo_path.clone();
-                self.set_message("Actualiza la ruta del repositorio", Color::Cyan);
+                self.set_message("✏️ Actualiza la ruta del repositorio", Color::Cyan);
             }
         }
     }
@@ -125,7 +125,7 @@ impl<'a> RepoManager<'a> {
                 } else if index >= self.repos.len() {
                     self.list_state.select(Some(self.repos.len() - 1));
                 }
-                self.set_message("Repositorio eliminado", Color::Yellow);
+                self.set_message("🗑️ Repositorio eliminado", Color::Yellow);
             }
         }
         Ok(())
@@ -144,7 +144,7 @@ impl<'a> RepoManager<'a> {
                 };
                 self.input.clear();
                 self.set_message(
-                    "¿El proyecto requiere compilación? 1) No • 2) Sí",
+                    "🛠️ ¿El proyecto requiere compilación? 1) No • 2) Sí",
                     Color::Cyan,
                 );
             }
@@ -159,18 +159,21 @@ impl<'a> RepoManager<'a> {
                     .push(RepoDefinition::new(source, Some(deploy_target.clone())));
                 self.persist()?;
                 self.list_state.select(Some(self.repos.len() - 1));
-                self.set_message("Repositorio de compilación añadido", Color::Green);
+                self.set_message("🚀 Repositorio de compilación añadido", Color::Green);
                 self.input_mode = InputMode::Normal;
                 self.input.clear();
             }
             InputMode::ChoosingBuildType { .. } => {}
             InputMode::EditingSource(index) => {
                 if input_value.is_empty() {
-                    self.set_message("La ruta del repositorio no puede estar vacía", Color::Red);
+                    self.set_message(
+                        "⚠️ La ruta del repositorio no puede estar vacía",
+                        Color::Red,
+                    );
                     return Ok(());
                 }
                 if index >= self.repos.len() {
-                    self.set_message("No se encontró el repositorio seleccionado", Color::Red);
+                    self.set_message("⚠️ No se encontró el repositorio seleccionado", Color::Red);
                     self.cancel_input();
                     return Ok(());
                 }
@@ -182,13 +185,13 @@ impl<'a> RepoManager<'a> {
                 };
                 self.input = current_destination;
                 self.set_message(
-                    "Actualiza la ruta de destino (opcional). Deja vacío para deshabilitar la compilación.",
+                    "📁 Actualiza la ruta de destino (opcional). Deja vacío para deshabilitar la compilación.",
                     Color::Cyan,
                 );
             }
             InputMode::EditingDestination { index, source } => {
                 if index >= self.repos.len() {
-                    self.set_message("No se encontró el repositorio seleccionado", Color::Red);
+                    self.set_message("⚠️ No se encontró el repositorio seleccionado", Color::Red);
                     self.input_mode = InputMode::Normal;
                     self.input.clear();
                     return Ok(());
@@ -205,9 +208,9 @@ impl<'a> RepoManager<'a> {
                 self.persist()?;
                 self.set_message(
                     if deploy_target.is_some() {
-                        "Repositorio actualizado (compilación)"
+                        "🚀 Repositorio actualizado (compilación)"
                     } else {
-                        "Repositorio actualizado"
+                        "✅ Repositorio actualizado"
                     },
                     Color::Green,
                 );
@@ -225,7 +228,7 @@ impl<'a> RepoManager<'a> {
             .push(RepoDefinition::new(source, Option::<String>::None));
         self.persist()?;
         self.list_state.select(Some(self.repos.len() - 1));
-        self.set_message("Repositorio añadido", Color::Green);
+        self.set_message("✅ Repositorio añadido", Color::Green);
         self.input_mode = InputMode::Normal;
         self.input.clear();
         Ok(())
@@ -235,7 +238,7 @@ impl<'a> RepoManager<'a> {
         self.input_mode = InputMode::AddingDestination { source };
         self.input.clear();
         self.set_message(
-            "Introduce la ruta de destino para desplegar el `dist` (Enter para confirmar, vacío para guardar como simple).",
+            "📦 Introduce la ruta de destino para desplegar el `dist` (Enter para confirmar, vacío para guardar como simple).",
             Color::Cyan,
         );
     }
@@ -243,7 +246,7 @@ impl<'a> RepoManager<'a> {
     fn cancel_input(&mut self) {
         self.input_mode = InputMode::Normal;
         self.input.clear();
-        self.set_message("Acción cancelada", Color::Yellow);
+        self.set_message("↩️ Acción cancelada", Color::Yellow);
     }
 
     fn persist(&self) -> Result<(), String> {
@@ -337,7 +340,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
 
     let items: Vec<ListItem> = if manager.repos.is_empty() {
         vec![ListItem::new(Line::from(vec![Span::styled(
-            "No hay repositorios configurados",
+            "📭 No hay repositorios configurados",
             Style::default().fg(Color::DarkGray),
         )]))]
     } else {
@@ -347,9 +350,9 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
             .map(|repo| {
                 let label = match &repo.deploy_target {
                     Some(target) if !target.is_empty() => {
-                        format!("{} ⇒ {}", repo.repo_path, target)
+                        format!("🚀 {} ⇒ {}", repo.repo_path, target)
                     }
-                    _ => repo.repo_path.clone(),
+                    _ => format!("📁 {}", repo.repo_path),
                 };
                 ListItem::new(Span::raw(label))
             })
@@ -369,20 +372,20 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
 
     let instructions = match manager.input_mode {
         InputMode::Normal => {
-            "↑/↓ mover • a añadir • e editar • d eliminar • Enter editar • q/Esc salir"
+            "🕹️ ↑/↓ mover • a añadir • e editar • d eliminar • Enter editar • q/Esc salir"
         }
         InputMode::AddingSource => {
-            "Modo añadir (origen): escribe la ruta del repositorio y presiona Enter"
+            "📝 Modo añadir (origen): escribe la ruta del repositorio y presiona Enter"
         }
         InputMode::ChoosingBuildType { .. } => {
-            "Selecciona si el proyecto requiere compilación: 1) No • 2) Sí • Esc cancelar"
+            "🛠️ Selecciona si el proyecto requiere compilación: 1) No • 2) Sí • Esc cancelar"
         }
         InputMode::AddingDestination { .. } => {
-            "Modo añadir (destino): escribe la ruta destino y presiona Enter, o deja vacío para guardar como simple"
+            "📦 Modo añadir (destino): escribe la ruta destino y presiona Enter, o deja vacío para guardar como simple"
         }
-        InputMode::EditingSource(_) => "Modo editar (origen): modifica la ruta y presiona Enter",
+        InputMode::EditingSource(_) => "✏️ Modo editar (origen): modifica la ruta y presiona Enter",
         InputMode::EditingDestination { .. } => {
-            "Modo editar (destino opcional): modifica la ruta destino y presiona Enter, o deja vacío"
+            "📁 Modo editar (destino opcional): modifica la ruta destino y presiona Enter, o deja vacío"
         }
     };
 
@@ -394,14 +397,14 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
     let (input_text, input_title) = match manager.input_mode {
         InputMode::Normal => ("".to_string(), "Ruta"),
         InputMode::AddingSource | InputMode::EditingSource(_) => {
-            (manager.input.clone(), "Ruta origen")
+            (manager.input.clone(), "📂 Ruta origen")
         }
         InputMode::AddingDestination { .. } | InputMode::EditingDestination { .. } => {
-            (manager.input.clone(), "Ruta destino (opcional)")
+            (manager.input.clone(), "📦 Ruta destino (opcional)")
         }
         InputMode::ChoosingBuildType { .. } => (
-            "1) Sin build • 2) Ejecutar build y desplegar dist".to_string(),
-            "Tipo de proyecto",
+            "1️⃣ Sin build • 2️⃣ Ejecutar build y desplegar dist".to_string(),
+            "🛠️ Tipo de proyecto",
         ),
     };
     let input_block = Paragraph::new(input_text)

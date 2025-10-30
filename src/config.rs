@@ -93,7 +93,7 @@ impl Config {
 
         if repos_created {
             println!(
-                "\nAgregue las rutas de los repositorios en {} y reinicie el servicio.\n",
+                "\n📌 Agregue las rutas de los repositorios en {} y reinicie el servicio.\n",
                 self.repos_file
             );
         }
@@ -104,11 +104,11 @@ impl Config {
     fn ensure_directory(&self, path: &str, mode: u32) -> Result<(), String> {
         if !Path::new(path).exists() {
             fs::create_dir_all(path)
-                .map_err(|e| format!("No se pudo crear el directorio {}: {}", path, e))?;
+                .map_err(|e| format!("❌ No se pudo crear el directorio {}: {}", path, e))?;
             let permissions = fs::Permissions::from_mode(mode);
             fs::set_permissions(path, permissions)
-                .map_err(|e| format!("No se pudieron asignar permisos a {}: {}", path, e))?;
-            println!("Directorio creado: {}", path);
+                .map_err(|e| format!("❌ No se pudieron asignar permisos a {}: {}", path, e))?;
+            println!("📁 Directorio creado: {}", path);
         }
         Ok(())
     }
@@ -123,18 +123,18 @@ impl Config {
                                    # /home/git/repos/mi-app-vue => /var/www/html/mi-app\n";
             fs::write(&self.repos_file, default_content).map_err(|e| {
                 format!(
-                    "No se pudo crear el archivo de repositorios {}: {}",
+                    "❌ No se pudo crear el archivo de repositorios {}: {}",
                     self.repos_file, e
                 )
             })?;
             let permissions = fs::Permissions::from_mode(0o644);
             fs::set_permissions(&self.repos_file, permissions).map_err(|e| {
                 format!(
-                    "No se pudieron asignar permisos a {}: {}",
+                    "❌ No se pudieron asignar permisos a {}: {}",
                     self.repos_file, e
                 )
             })?;
-            println!("Archivo de repositorios creado: {}", self.repos_file);
+            println!("🗂️ Archivo de repositorios creado: {}", self.repos_file);
             return Ok(true);
         }
 
@@ -146,24 +146,24 @@ impl Config {
             let default_settings = Settings::default();
             let toml_string = toml::to_string_pretty(&default_settings).map_err(|e| {
                 format!(
-                    "No se pudo serializar la configuración predeterminada: {}",
+                    "❌ No se pudo serializar la configuración predeterminada: {}",
                     e
                 )
             })?;
             fs::write(&self.settings_file, toml_string).map_err(|e| {
                 format!(
-                    "No se pudo crear el archivo de configuración {}: {}",
+                    "❌ No se pudo crear el archivo de configuración {}: {}",
                     self.settings_file, e
                 )
             })?;
             let permissions = fs::Permissions::from_mode(0o644);
             fs::set_permissions(&self.settings_file, permissions).map_err(|e| {
                 format!(
-                    "No se pudieron asignar permisos a {}: {}",
+                    "❌ No se pudieron asignar permisos a {}: {}",
                     self.settings_file, e
                 )
             })?;
-            println!("Archivo de configuración creado: {}", self.settings_file);
+            println!("⚙️ Archivo de configuración creado: {}", self.settings_file);
         }
 
         Ok(())
@@ -173,15 +173,18 @@ impl Config {
         if !Path::new(&self.log_file).exists() {
             File::create(&self.log_file).map_err(|e| {
                 format!(
-                    "No se pudo crear el archivo de registro {}: {}",
+                    "❌ No se pudo crear el archivo de registro {}: {}",
                     self.log_file, e
                 )
             })?;
             let permissions = fs::Permissions::from_mode(0o644);
             fs::set_permissions(&self.log_file, permissions).map_err(|e| {
-                format!("No se pudieron asignar permisos a {}: {}", self.log_file, e)
+                format!(
+                    "❌ No se pudieron asignar permisos a {}: {}",
+                    self.log_file, e
+                )
             })?;
-            println!("Archivo de registro creado: {}", self.log_file);
+            println!("📝 Archivo de registro creado: {}", self.log_file);
         }
 
         Ok(())
@@ -190,7 +193,7 @@ impl Config {
     pub fn read_repos(&self) -> Vec<RepoDefinition> {
         let contents = fs::read_to_string(&self.repos_file).unwrap_or_else(|e| {
             panic!(
-                "No se pudo leer el archivo de repositorios {}: {}",
+                "❌ No se pudo leer el archivo de repositorios {}: {}",
                 self.repos_file, e
             )
         });
@@ -213,7 +216,7 @@ impl Config {
 
         fs::write(&self.repos_file, content).map_err(|e| {
             format!(
-                "No se pudo escribir en el archivo de repositorios {}: {}",
+                "❌ No se pudo escribir en el archivo de repositorios {}: {}",
                 self.repos_file, e
             )
         })?;
@@ -221,7 +224,7 @@ impl Config {
         let permissions = fs::Permissions::from_mode(0o644);
         fs::set_permissions(&self.repos_file, permissions).map_err(|e| {
             format!(
-                "No se pudieron asignar permisos a {}: {}",
+                "❌ No se pudieron asignar permisos a {}: {}",
                 self.repos_file, e
             )
         })?;

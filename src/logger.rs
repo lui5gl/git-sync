@@ -34,10 +34,10 @@ impl Logger {
 
     pub fn log_error(&self, message: &str) {
         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
-        let log_entry = format!("[{}] ERROR: {}\n", timestamp, message);
+        let log_entry = format!("[{}] ❌ ERROR: {}\n", timestamp, message);
 
         // Mostrar en consola
-        eprint!("ERROR: {}\n", message);
+        eprint!("❌ ERROR: {}\n", message);
 
         // Escribir en el archivo de registro
         if let Ok(mut file) = OpenOptions::new()
