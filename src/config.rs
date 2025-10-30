@@ -120,8 +120,8 @@ impl Config {
                                    # Para proyectos que requieren compilar y desplegar, utilice:\n\
                                    # /ruta/al/proyecto => /ruta/destino\n\
                                    # Ejemplos:\n\
-                                   # /home/git/repos/mi-repo\n\
-                                   # /home/git/repos/mi-app-vue => /var/www/html/mi-app\n";
+                                   # Laravel sin build: /var/www/html/mi-api\n\
+                                   # Frontend compilado: /root/proyects/mi-app => /var/www/html/mi-app/public\n";
             fs::write(&self.repos_file, default_content).map_err(|e| {
                 format!(
                     "❌ No se pudo crear el archivo de repositorios {}: {}",
@@ -210,6 +210,9 @@ impl Config {
         content.push_str("# Especifique una ruta absoluta por línea (ruta local, no URL remota)\n");
         content.push_str("# Para proyectos que requieren build, utilice el formato:\n");
         content.push_str("#   /ruta/al/proyecto => /ruta/destino\n");
+        content.push_str("# Ejemplos:\n");
+        content.push_str("#   Laravel sin build: /var/www/html/mi-api\n");
+        content.push_str("#   Frontend compilado: /root/proyects/mi-app => /var/www/html/mi-app/public\n");
         for repo in repos {
             content.push_str(&repo.to_line());
             content.push('\n');

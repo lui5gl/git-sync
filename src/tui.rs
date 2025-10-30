@@ -100,7 +100,7 @@ impl<'a> RepoManager<'a> {
         self.input_mode = InputMode::AddingSource;
         self.input.clear();
         self.set_message(
-            "📝 Introduce la ruta local del repositorio a sincronizar (no la URL remota)",
+            "📝 Ruta local del repo (Laravel: /var/www/html/mi-api • Vue: /root/proyects/mi-app)",
             Color::Cyan,
         );
     }
@@ -111,7 +111,7 @@ impl<'a> RepoManager<'a> {
                 self.input_mode = InputMode::EditingSource(index);
                 self.input = repo.repo_path.clone();
                 self.set_message(
-                    "✏️ Actualiza la ruta local del repositorio (no la URL remota)",
+                    "✏️ Ajusta la ruta local (Laravel: /var/www/html/mi-api • Vue: /root/proyects/mi-app)",
                     Color::Cyan,
                 );
             }
@@ -147,7 +147,7 @@ impl<'a> RepoManager<'a> {
                 };
                 self.input.clear();
                 self.set_message(
-                    "🛠️ ¿El proyecto requiere compilación? 1) No • 2) Sí",
+                    "🛠️ ¿Requiere compilación? 1) No (Laravel directo) • 2) Sí (Vue: fuente /root/proyects → destino /var/www/html/...)",
                     Color::Cyan,
                 );
             }
@@ -188,7 +188,7 @@ impl<'a> RepoManager<'a> {
                 };
                 self.input = current_destination;
                 self.set_message(
-                    "📁 Actualiza la ruta de destino local (opcional). Deja vacío para deshabilitar la compilación.",
+                    "📁 Ruta destino compilada (Vue: /var/www/html/mi-app/public) o vacío para desactivar.",
                     Color::Cyan,
                 );
             }
@@ -241,7 +241,7 @@ impl<'a> RepoManager<'a> {
         self.input_mode = InputMode::AddingDestination { source };
         self.input.clear();
         self.set_message(
-            "📦 Introduce la ruta local de destino para desplegar el `dist` (Enter para confirmar, vacío para guardar como simple).",
+            "📦 Ruta destino compilada (Vue: /var/www/html/mi-app/public). Enter confirma, vacío simple.",
             Color::Cyan,
         );
     }
@@ -378,19 +378,19 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
             "🕹️ ↑/↓ mover • a añadir • e editar • d eliminar • Enter editar • q/Esc salir"
         }
         InputMode::AddingSource => {
-            "📝 Modo añadir (origen): escribe la ruta local del repositorio (no la URL remota) y presiona Enter"
+            "📝 Escribe la ruta local (Laravel: /var/www/html/mi-api • Vue: /root/proyects/mi-app) y Enter"
         }
         InputMode::ChoosingBuildType { .. } => {
-            "🛠️ Selecciona si el proyecto requiere compilación: 1) No • 2) Sí • Esc cancelar"
+            "🛠️ 1) No (Laravel directo) • 2) Sí (Vue: fuente /root/proyects → destino /var/www/html/...) • Esc cancelar"
         }
         InputMode::AddingDestination { .. } => {
-            "📦 Modo añadir (destino): escribe la ruta local de destino y presiona Enter, o deja vacío para guardar como simple"
+            "📦 Escribe la ruta destino compilada (Vue: /var/www/html/mi-app/public) o deja vacío"
         }
         InputMode::EditingSource(_) => {
-            "✏️ Modo editar (origen): modifica la ruta local y presiona Enter"
+            "✏️ Ajusta la ruta local y presiona Enter"
         }
         InputMode::EditingDestination { .. } => {
-            "📁 Modo editar (destino opcional): modifica la ruta local de destino y presiona Enter, o deja vacío"
+            "📁 Ajusta la ruta destino local o deja vacío"
         }
     };
 
@@ -402,13 +402,19 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
     let (input_text, input_title) = match manager.input_mode {
         InputMode::Normal => ("".to_string(), "Ruta"),
         InputMode::AddingSource | InputMode::EditingSource(_) => {
-            (manager.input.clone(), "📂 Ruta origen (local)")
+            (
+                manager.input.clone(),
+                "📂 Ruta origen (Laravel: /var/www/html/mi-api • Vue: /root/proyects/mi-app)",
+            )
         }
         InputMode::AddingDestination { .. } | InputMode::EditingDestination { .. } => {
-            (manager.input.clone(), "📦 Ruta destino local (opcional)")
+            (
+                manager.input.clone(),
+                "📦 Ruta destino (Vue: /var/www/html/mi-app/public)",
+            )
         }
         InputMode::ChoosingBuildType { .. } => (
-            "1️⃣ Sin build • 2️⃣ Ejecutar build y desplegar dist".to_string(),
+            "1️⃣ Laravel sin build • 2️⃣ Vue compilado (deploy dist/)".to_string(),
             "🛠️ Tipo de proyecto",
         ),
     };
