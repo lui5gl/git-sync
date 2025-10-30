@@ -1,208 +1,160 @@
-# Git Sync - Daemon de Sincronización de Repositorios
+# Git Sync
 
-Git Sync es un daemon ligero que automatiza la sincronización de múltiples repositorios Git con sus remotos, sin depender de pipelines externos ni de infraestructura adicional.
+Daemon ligero que mantiene múltiples repositorios Git al día y, cuando corresponde, compila y despliega automáticamente proyectos front-end. Nació para reemplazar pipelines de CI/CD en entornos con pocas herramientas disponibles: se instala como servicio `systemd`, vigila tus repositorios locales y ejecuta los pasos necesarios sin depender de servidores externos.
 
-## Motivación
+---
 
-Git Sync responde a la necesidad de mantener repositorios alineados cuando no es viable utilizar GitLab CI/CD:
+## Características destacadas
 
-- Instalaciones de GitLab en versiones antiguas que no soportan funcionalidades modernas de CI/CD
-- Restricciones de infraestructura o políticas que impiden configurar pipelines
-- Ambientes cerrados en los que no se autoriza el uso de GitLab CI/CD
+- 🔁 **Sincronización automática** de cualquier número de repositorios Git locales desde su `origin`.
+- 🛠️ **Modo build opcional**: tras actualizar el código ejecuta `bun`, `pnpm`, `yarn` o `npm` (en ese orden de prioridad) con `run build` y copia el contenido de `dist/` al destino que definas.
+- 🧭 **Detección de rama**: usa la rama remota declarada como HEAD (`origin/main`, `origin/master`, etc.); si no existe, intenta con `main` y luego con `master`.
+- 🖥️ **Interfaz TUI** (terminal) para añadir, editar o eliminar repositorios sin tocar archivos manualmente.
+- 🪵 **Logging persistente** en `/var/log/git-sync/git-sync.log` con marcas de tiempo y mensajes claros (emojis incluidos).
+- ⚙️ **Configuración declarativa** en `/etc/git-sync`, creada automáticamente con permisos apropiados.
+- ♻️ **Modo demonio continuo** o ejecución única configurable, con relectura automática de ajustes entre ciclos.
+- 📦 **Artefactos oficiales**: binarios estáticos para Linux glibc (`git-sync-linux-x86_64-glibc.tar.gz`) y musl (`git-sync-linux-x86_64-musl.tar.gz`).
 
-La herramienta se ejecuta en el entorno local del usuario, opera de manera independiente y mantiene los repositorios actualizados mediante ciclos de sincronización regulares.
+---
 
-## Características principales
+## Instalación rápida
 
-- Sincronización automatizada de múltiples repositorios en un mismo ciclo
-- Instalación directa como servicio `systemd`
-- Configuración centralizada en `/etc/git-sync/config.toml`
-- Funcionamiento en modo continuo o ejecución única
-- Detección automática de la rama principal (`main` o `master`)
-- Registro detallado en `/var/log/git-sync/git-sync.log`
-- Interrupción inmediata ante errores (ideal para tareas programadas)
-- Recarga dinámica de la configuración sin reinicios manuales
-- Despliegue opcional de proyectos Node/Vue: detecta `bun`/`pnpm`/`yarn` y cae en `npm` para ejecutar el build y copiar `dist` al destino elegido
-
-## Instalación
-
-Compile desde el código fuente:
+### Compilar desde el código fuente
 
 ```bash
 cargo build --release
 sudo cp target/release/git-sync /usr/local/bin/
-sudo git-sync      # Primera ejecución: instala el servicio y abre la TUI
+sudo git-sync          # Primera ejecución: crea la configuración y abre la TUI
 ```
 
-También puede descargar el binario precompilado desde la sección de [releases](https://github.com/lui5gl/git-sync/releases):
+### Usar un release publicado
+
+1. Descarga el artefacto deseado desde la sección **Releases**.
+2. Descomprime y mueve el binario a tu `PATH`:
 
 ```bash
-# Linux
-wget https://github.com/lui5gl/git-sync/releases/latest/download/git-sync
-chmod +x git-sync
+tar -xzf git-sync-linux-x86_64-glibc.tar.gz
 sudo mv git-sync /usr/local/bin/
-
-# Inicialización e instalación del servicio systemd
 sudo git-sync
-
-# Verificación de la instalación
-git-sync --version
 ```
 
-Edite `/etc/git-sync/config.toml` y `/etc/git-sync/repositories.txt` con privilegios elevados para ajustar parámetros y definir los repositorios a sincronizar. Reinicie el servicio con `sudo systemctl restart git-sync` después de realizar cambios.
-
-### Distribuciones antiguas (CentOS 7 y anteriores)
-
-Si el binario precompilado falla por dependencias de `GLIBC`, utilice el artefacto `git-sync-linux-amd64-musl.tar.gz` disponible en la sección de releases. Dentro del archivo comprimido encontrará un ejecutable enlazado estáticamente con `musl`, generado automáticamente por GitHub Actions y apto para sistemas con versiones heredadas de `glibc`.
+Para sistemas antiguos (CentOS 7, Alpine, etc.) utiliza el artefacto musl:
 
 ```bash
-wget https://github.com/lui5gl/git-sync/releases/latest/download/git-sync-linux-amd64-musl.tar.gz
-tar -xzf git-sync-linux-amd64-musl.tar.gz
-chmod +x git-sync-linux-amd64-musl
-sudo mv git-sync-linux-amd64-musl /usr/local/bin/git-sync
+tar -xzf git-sync-linux-x86_64-musl.tar.gz
+sudo mv git-sync /usr/local/bin/
+sudo git-sync
 ```
 
-Gracias al enlazado estático con `musl` no es necesario recompilar localmente para CentOS 7 o derivadas: la acción de GitHub publica el binario listo para usar en cada release.
+La primera ejecución instala el servicio `systemd`, crea los directorios necesarios y abre la TUI para que cargues repositorios.
 
-## Desinstalación
+---
 
-1. Detenga y elimine el servicio:
-   ```bash
-   sudo git-sync uninstall-service
-   ```
-
-2. (Opcional) retire el binario, la configuración y los registros:
-   ```bash
-   sudo rm /usr/local/bin/git-sync
-   sudo rm -rf /etc/git-sync
-   sudo rm -rf /var/log/git-sync
-   ```
-
-## Comandos
-
-```bash
-sudo git-sync              # Abre la interfaz TUI (e instala el servicio si aún no existe)
-git-sync daemon            # Ejecuta el daemon de sincronización (lo invoca systemd)
-git-sync uninstall-service # Detiene y elimina el servicio systemd
-git-sync --help            # Muestra ayuda
-```
-
-## Configuración
-
-La primera ejecución crea de manera automática:
+## Estructura de configuración
 
 ```
 /etc/git-sync/
-├── config.toml        # Configuración del servicio
-└── repositories.txt   # Lista de repositorios a sincronizar
+├── config.toml        # Ajustes generales
+└── repositories.txt   # Repos sincronizados y opcionales despliegues
 
 /var/log/git-sync/
-└── git-sync.log       # Archivo de registro con marca de tiempo
+└── git-sync.log       # Registro persistente del daemon
 ```
 
 ### `config.toml`
 
 ```toml
-# Intervalo entre ciclos de sincronización (segundos)
-sync_interval = 60
-
-# Finalizar el programa ante cualquier error
-stop_on_error = true
-
-# Tiempo máximo para operaciones Git (segundos)
-git_timeout = 300
-
-# Número máximo de reintentos ante fallos temporales
-max_retries = 0
-
-# Activar salida detallada
-verbose = true
-
-# Ejecutar en modo continuo
-continuous_mode = true
+sync_interval = 60          # Segundos entre ciclos de sincronización
+stop_on_error = true        # Detener el daemon ante el primer error
+git_timeout = 300           # Timeout para operaciones Git
+max_retries = 0             # Reintentos para fallos transitorios
+verbose = true              # Incluir mensajes detallados en el log
+continuous_mode = true      # Ciclos infinitos (false = una sola pasada)
 ```
 
-Defina las rutas absolutas de los repositorios en `/etc/git-sync/repositories.txt`:
+### `repositories.txt`
+
+Formato soportado:
 
 ```
-# Repositorios a sincronizar
-/home/user/projects/repo1
-/home/user/projects/repo2
-/home/user/projects/repo3
+# Solo sincronización
+/home/deploy/repos/mi-api
 
-# Proyectos que requieren build y despliegue
-/home/user/projects/mi-app-vue => /var/www/html/mi-app
+# Sincronización + build + despliegue
+/home/deploy/repos/mi-app-vue => /var/www/html/mi-app
 ```
 
-### Gestor interactivo de repositorios (TUI)
+- La ruta antes de `=>` debe ser un repositorio Git válido.
+- La ruta después de `=>` es opcional. Cuando existe:
+  1. Se ejecuta `git fetch`/`git pull` como siempre.
+  2. Se ejecuta `bun|pnpm|yarn|npm run build` (prioridad según lockfile presente).
+  3. El contenido de `dist/` reemplaza la carpeta destino indicando (`rm -rf` y copia recursiva).
 
-El comando `sudo git-sync` abre la interfaz basada en `ratatui`, que permite:
+Puedes editar el archivo a mano o usar la TUI (`sudo git-sync`) para que el formato se mantenga sin errores.
 
-- Desplazamiento con ↑/↓
-- Añadir (`a`), modificar (`e` o Enter) y eliminar (`d`) rutas
-- Guardar con Enter y salir con `q` o `Esc`
-- Tras ingresar la ruta se debe elegir: `1` para repositorio simple o `2` para proyecto con build; si eliges build, se solicitará la carpeta destino (vacía para mantenerlo como simple)
+---
 
-Las modificaciones se escriben directamente en `/etc/git-sync/repositories.txt`.
+## Interfaz TUI
 
-## Uso
+Ejecuta `sudo git-sync` (sin argumentos) para abrir la consola interactiva:
 
-### Servicio `systemd` (recomendado)
+- `↑/↓` navegar, `Enter` o `e` editar, `a` añadir, `d` eliminar, `q/Esc` salir.
+- Al añadir un repositorio:
+  1. Ingresas la ruta del repo.
+  2. Elegís si requiere build (`1` = no, `2` = sí).
+  3. Si elegiste build, se solicita la ruta de despliegue (vacía = lo convierte en repo simple).
+- Los mensajes de estado aparecen en la parte inferior con colores y emojis.
 
-Tras la primera ejecución de `sudo git-sync`, el servicio queda instalado y en operación:
+---
+
+## Servicio `systemd`
+
+La primera ejecución instala y habilita la unidad `git-sync`:
 
 ```bash
-sudo systemctl status git-sync
+sudo systemctl status git-sync        # Ver estado
+sudo systemctl restart git-sync       # Reiniciar después de cambios
+sudo git-sync uninstall-service       # Deshabilitar y borrar la unidad
 ```
 
-La unidad utiliza la cuenta que ejecutó la instalación, lee la configuración desde `/etc/git-sync` y registra la actividad en `/var/log/git-sync/git-sync.log`. La configuración se recarga automáticamente en el siguiente ciclo después de cualquier actualización.
-
-### Ejecución manual
-
-Para validar el comportamiento sin `systemd`, ejecute:
-
-```bash
-git-sync
-```
-
-El proceso recorre los repositorios, sincroniza cada uno y continúa en modo continuo (o finaliza tras un ciclo si `continuous_mode = false`).
-
-### Registros
-
-Los registros se conservan en `/var/log/git-sync/git-sync.log` con un formato legible:
+Los comandos `systemctl` exitosos no imprimen nada para evitar ruido; cualquier advertencia o error aparece con marca temporal:
 
 ```
-[2025-10-21 14:30:00] Git Sync - Daemon de sincronización de repositorios
-[2025-10-21 14:30:00] Se analizarán 3 repositorios
-[2025-10-21 14:30:01] Procesando repositorio: /home/user/projects/repo1
-[2025-10-21 14:30:01] El repositorio ya está actualizado.
-[2025-10-21 14:30:02] Ciclo completado correctamente.
+[2025-02-14 10:12:33] ⚠️ systemctl enable --now git-sync finalizó con el estado 1. Es posible que deba ejecutarlo manualmente.
 ```
 
-## Arquitectura del código
+---
 
-```
-src/
-├── main.rs        # Punto de entrada y gestión de errores
-├── config.rs      # Lectura de configuración y lista de repositorios
-├── git.rs         # Operaciones Git (fetch, pull, ramas)
-├── logger.rs      # Sistema de registro con marcas de tiempo
-├── service.rs     # Instalación y eliminación del servicio systemd
-├── processor.rs   # Orquestación del ciclo de sincronización
-└── tui.rs         # Interfaz interactiva basada en ratatui
-```
+## Funcionamiento interno
 
-## Manejo de errores
+1. **Detección de rama**: se intenta leer `refs/remotes/origin/HEAD`. Si no existe, se prubea `origin/main`; si tampoco, `origin/master`.
+2. **Sincronización**:
+   - `git fetch`
+   - Contar commits pendientes (`rev-list HEAD..origin/<branch>`)
+   - Si hay diferencias, `git pull origin <branch>`
+3. **Build + despliegue (opcional)**:
+   - Detectar gestor: `bun.lockb`/`bunfig.toml` → `bun`; `pnpm-lock.yaml` → `pnpm`; `yarn.lock` → `yarn`; en otro caso `npm`.
+   - Ejecutar `run build`.
+   - Limpiar destino y copiar `dist/`.
+4. **Registro**: todas las acciones se anotan en `/var/log/git-sync/git-sync.log` con hora y emojis para ubicar fácilmente éxitos (`✅`), despliegues (`🚀`), advertencias (`⚠️`) y fallos (`❌`).
 
-El daemon detiene la ejecución ante cualquiera de los siguientes eventos:
+---
 
-- Ruta inexistente
-- Directorio sin repositorio Git válido
-- Error en la operación `git fetch`
-- Error en la operación `git pull`
+## Desarrollo
 
-Este comportamiento evita bucles fallidos en ejecuciones programadas.
+Requisitos locales:
+
+- Rust estable (edición 2024).
+- `cargo fmt` y `cargo clippy` para formatear y analizar.
+- Para el target musl (`cargo build --target x86_64-unknown-linux-musl`) instala previamente `musl-tools`.
+
+Publicación:
+
+- El workflow `.github/workflows/build.yml` compila dos artefactos (`glibc` y `musl`) y los adjunta al release correspondiente (`v*`).
+- Después de subir un tag `vX.Y.Z`, GitHub Actions generará automáticamente los paquetes `.tar.gz`.
+
+---
 
 ## Licencia
 
-MIT
+Este proyecto se distribuye bajo la licencia MIT. Revisa el archivo `LICENSE` para más detalles.
