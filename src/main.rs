@@ -50,7 +50,7 @@ fn print_help() {
 
 🛠️ Recuerde
   • Utilice rutas locales del servidor (no URLs remotas).
-  • Frontends (Vue) compilados: fuente en /root/proyects y despliegue en /var/www/html/...
+  • Proyectos con compilación: fuente en /root/proyects y despliegue en /var/www/html/...
   • Revise los permisos de archivos si ejecuta como otro usuario.
 "#,
         version = VERSION
