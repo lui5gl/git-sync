@@ -1,29 +1,48 @@
 use crate::config::{Config, RepoDefinition};
-use crossterm::ExecutableCommand;
+use crate::settings::{AppMode, Settings};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use ratatui::Frame;
-use ratatui::Terminal;
+use crossterm::ExecutableCommand;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
-use std::io::{Stdout, stdout};
+use ratatui::Frame;
+use ratatui::Terminal;
+use std::fs;
+use std::io::{stdout, Stdout};
+use std::path::Path;
 
 #[derive(Clone)]
 enum InputMode {
     Normal,
     ChoosingBuildType,
-    AddingSource { requires_build: bool },
-    AddingDestination { source: String },
+    AddingSource {
+        requires_build: bool,
+    },
+    AddingDestination {
+        source: String,
+    },
+    AskingEnvConfirmation {
+        source: String,
+        env_path: String,
+    },
+    ConfirmingEnv {
+        source: String,
+        env_path: String,
+        requires_build: bool,
+    },
     EditingSource(usize),
-    EditingDestination { index: usize, source: String },
+    EditingDestination {
+        index: usize,
+        source: String,
+    },
 }
 
-pub fn run_repo_manager(config: &Config) -> Result<(), String> {
+pub fn run_repo_manager(config: &Config, settings: &Settings) -> Result<(), String> {
     enable_raw_mode().map_err(|e| format!("No se pudo activar el modo raw del terminal: {}", e))?;
     let mut stdout = stdout();
     stdout
@@ -34,7 +53,7 @@ pub fn run_repo_manager(config: &Config) -> Result<(), String> {
     let mut terminal =
         Terminal::new(backend).map_err(|e| format!("No se pudo inicializar el terminal: {}", e))?;
 
-    let result = run_loop(&mut terminal, config);
+    let result = run_loop(&mut terminal, config, settings);
 
     disable_raw_mode()
         .map_err(|e| format!("No se pudo desactivar el modo raw del terminal: {}", e))?;
@@ -51,6 +70,7 @@ pub fn run_repo_manager(config: &Config) -> Result<(), String> {
 
 struct RepoManager<'a> {
     config: &'a Config,
+    settings: &'a Settings,
     repos: Vec<RepoDefinition>,
     list_state: ListState,
     input_mode: InputMode,
@@ -59,7 +79,7 @@ struct RepoManager<'a> {
 }
 
 impl<'a> RepoManager<'a> {
-    fn new(config: &'a Config) -> Self {
+    fn new(config: &'a Config, settings: &'a Settings) -> Self {
         let repos = config.read_repos();
         let mut list_state = ListState::default();
         if !repos.is_empty() {
@@ -68,6 +88,7 @@ impl<'a> RepoManager<'a> {
 
         RepoManager {
             config,
+            settings,
             repos,
             list_state,
             input_mode: InputMode::Normal,
@@ -142,10 +163,76 @@ impl<'a> RepoManager<'a> {
                     self.set_message("La ruta del repositorio no puede estar vacía", Color::Red);
                     return Ok(());
                 }
+
+                // Si estamos en desarrollo y se detecta un .env, pedir confirmación
+                if self.settings.mode == AppMode::Development {
+                    if let Some(env_path) = self.find_env_file(&input_value) {
+                        self.input_mode = InputMode::AskingEnvConfirmation {
+                            source: input_value,
+                            env_path,
+                        };
+                        self.input.clear();
+                        self.set_message(
+                            "❓ .env detectado. ¿Configurar despliegue automático? (y/n):",
+                            Color::Cyan,
+                        );
+                        return Ok(());
+                    }
+                }
+
                 if requires_build {
                     self.begin_destination_input(input_value);
                 } else {
                     return self.finalize_simple_repo(input_value);
+                }
+            }
+            InputMode::AskingEnvConfirmation { source, env_path } => {
+                let lower = input_value.to_lowercase();
+                if lower == "y" || lower == "s" {
+                    self.input_mode = InputMode::ConfirmingEnv {
+                        source,
+                        env_path,
+                        requires_build: true,
+                    };
+                    self.input.clear();
+                    self.set_message(
+                        "📝 Ingrese la ruta destino remota (ej: /var/www/html/app):",
+                        Color::Cyan,
+                    );
+                } else {
+                    // Si dice que no, procedemos normal como un repo con build
+                    self.begin_destination_input(source);
+                }
+            }
+            InputMode::ConfirmingEnv {
+                source,
+                env_path,
+                requires_build,
+            } => {
+                if !input_value.is_empty() {
+                    if let Err(e) = self.config_env_file(&env_path, &input_value) {
+                        self.set_message(format!("❌ Error al configurar .env: {}", e), Color::Red);
+                    } else {
+                        self.set_message("📝 .env actualizado correctamente", Color::Green);
+                    }
+
+                    // Después de configurar .env, procedemos a añadir el repo con ese destino
+                    self.repos.push(RepoDefinition::new(
+                        source,
+                        Some(input_value.clone()),
+                    ));
+                    self.persist()?;
+                    self.list_state.select(Some(self.repos.len() - 1));
+                    self.set_message("🚀 Repositorio con deploy .env añadido", Color::Green);
+                    self.input_mode = InputMode::Normal;
+                    self.input.clear();
+                } else {
+                    // Si el usuario deja vacío, seguimos el flujo normal
+                    if requires_build {
+                        self.begin_destination_input(source);
+                    } else {
+                        return self.finalize_simple_repo(source);
+                    }
                 }
             }
             InputMode::AddingDestination { source } => {
@@ -280,13 +367,56 @@ impl<'a> RepoManager<'a> {
     fn set_message<S: Into<String>>(&mut self, message: S, color: Color) {
         self.message = Some((message.into(), color));
     }
+
+    fn find_env_file(&self, source_path: &str) -> Option<String> {
+        let path = Path::new(source_path);
+        if !path.is_dir() {
+            return None;
+        }
+
+        let dot_env_production = path.join(".env.production");
+        if dot_env_production.exists() {
+            return Some(dot_env_production.to_str().unwrap().to_string());
+        }
+
+        let dot_env = path.join(".env");
+        if dot_env.exists() {
+            return Some(dot_env.to_str().unwrap().to_string());
+        }
+
+        None
+    }
+
+    fn config_env_file(&self, env_path: &str, deploy_path: &str) -> Result<(), String> {
+        let content = fs::read_to_string(env_path)
+            .map_err(|e| format!("No se pudo leer el archivo .env: {}", e))?;
+
+        let mut lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
+
+        // Eliminar si ya existen
+        lines.retain(|l| {
+            !l.starts_with("GIT_SYNC_DEPLOY_SERVER=") && !l.starts_with("GIT_SYNC_DEPLOY_PATH=")
+        });
+
+        // Añadir nuevas líneas
+        if let Some(host) = &self.settings.remote_host {
+            lines.push(format!("GIT_SYNC_DEPLOY_SERVER={}", host));
+        }
+        lines.push(format!("GIT_SYNC_DEPLOY_PATH={}", deploy_path));
+
+        fs::write(env_path, lines.join("\n"))
+            .map_err(|e| format!("No se pudo escribir en el archivo .env: {}", e))?;
+
+        Ok(())
+    }
 }
 
 fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     config: &Config,
+    settings: &Settings,
 ) -> Result<(), String> {
-    let mut manager = RepoManager::new(config);
+    let mut manager = RepoManager::new(config, settings);
 
     loop {
         terminal
@@ -323,6 +453,8 @@ fn run_loop(
                     },
                     InputMode::AddingSource { .. }
                     | InputMode::AddingDestination { .. }
+                    | InputMode::AskingEnvConfirmation { .. }
+                    | InputMode::ConfirmingEnv { .. }
                     | InputMode::EditingSource(_)
                     | InputMode::EditingDestination { .. } => match code {
                         KeyCode::Enter => manager.submit()?,
@@ -406,6 +538,12 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         InputMode::AddingDestination { .. } => {
             "📦 Escribe la ruta destino compilada (ej. /var/www/html/mi-app/public) o deja vacío"
         }
+        InputMode::AskingEnvConfirmation { .. } => {
+            "❓ .env detectado: ¿Configurar despliegue automático? (y/n)"
+        }
+        InputMode::ConfirmingEnv { .. } => {
+            "📝 .env detectado: Escribe la ruta de destino remota para confirmar o deja vacío para saltar"
+        }
         InputMode::EditingSource(_) => "✏️ Ajusta la ruta local y presiona Enter",
         InputMode::EditingDestination { .. } => "📁 Ajusta la ruta destino local o deja vacío",
     };
@@ -436,6 +574,14 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         InputMode::AddingDestination { .. } | InputMode::EditingDestination { .. } => (
             manager.input.clone(),
             "📦 Ruta destino (ej. /var/www/html/mi-app/public)",
+        ),
+        InputMode::AskingEnvConfirmation { .. } => (
+            manager.input.clone(),
+            "❓ ¿Configurar deploy server y path en .env? (y/n)",
+        ),
+        InputMode::ConfirmingEnv { .. } => (
+            manager.input.clone(),
+            "🌍 Configurar .env: Ruta destino remota (vacio para omitir)",
         ),
         InputMode::ChoosingBuildType => (
             "1️⃣ Sin compilación • 2️⃣ Con compilación (deploy dist/)".to_string(),

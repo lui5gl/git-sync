@@ -99,6 +99,8 @@ fn main() {
         }
     }
 
+    let settings = Settings::load_or_create(&config.settings_file);
+
     // Sin argumentos: instalar el servicio y abrir la TUI
     if let Err(err) = install_service() {
         eprintln!(
@@ -108,7 +110,7 @@ fn main() {
         eprintln!("👉 Ejecute `sudo git-sync daemon` o complete la instalación de forma manual.");
     }
 
-    if let Err(err) = run_repo_manager(&config) {
+    if let Err(err) = run_repo_manager(&config, &settings) {
         eprintln!("❌ Error al ejecutar el gestor de repositorios: {}", err);
         std::process::exit(1);
     }
