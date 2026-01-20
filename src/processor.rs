@@ -1,17 +1,33 @@
 use crate::config::RepoDefinition;
 use crate::git::GitRepo;
 use crate::logger::Logger;
+use crate::settings::AppMode;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 pub struct RepoProcessor<'a> {
     logger: &'a Logger,
     verbose: bool,
+    mode: AppMode,
+    remote_host: Option<String>,
+    remote_user: Option<String>,
 }
 
 impl<'a> RepoProcessor<'a> {
-    pub fn new(logger: &'a Logger, verbose: bool) -> Self {
-        RepoProcessor { logger, verbose }
+    pub fn new(
+        logger: &'a Logger,
+        verbose: bool,
+        mode: AppMode,
+        remote_host: Option<String>,
+        remote_user: Option<String>,
+    ) -> Self {
+        RepoProcessor {
+            logger,
+            verbose,
+            mode,
+            remote_host,
+            remote_user,
+        }
     }
 
     pub fn process_all(&self, repo_defs: Vec<RepoDefinition>) -> Result<(), String> {
@@ -88,10 +104,25 @@ impl<'a> RepoProcessor<'a> {
         }
 
         self.validate_repo(&repo.repo_path)?;
-        self.check_and_pull(&repo.repo_path)?;
 
-        if let Some(target) = &repo.deploy_target {
-            self.build_and_deploy(&repo.repo_path, target)?;
+        match self.mode {
+            AppMode::Production => {
+                self.check_and_pull(&repo.repo_path)?;
+
+                if let Some(target) = &repo.deploy_target {
+                    self.build_and_deploy(&repo.repo_path, target)?;
+                }
+            }
+            AppMode::Development => {
+                if let Some(target) = &repo.deploy_target {
+                    self.build_and_remote_deploy(&repo.repo_path, target)?;
+                } else {
+                    self.logger.log_line(&format!(
+                        "⚠️ No se ha definido un destino (deploy target) para {}, saltando upload.",
+                        repo.repo_path
+                    ));
+                }
+            }
         }
 
         Ok(())
@@ -178,6 +209,59 @@ impl<'a> RepoProcessor<'a> {
         }
 
         Ok(())
+    }
+
+    fn build_and_remote_deploy(&self, repo_path: &str, destination: &str) -> Result<(), String> {
+        self.run_build(repo_path)?;
+
+        let dist_path = Path::new(repo_path).join("dist");
+        if !dist_path.exists() {
+            return Err(format!(
+                "❗ No se encontró el directorio de salida en {}",
+                dist_path.display()
+            ));
+        }
+
+        let host = self
+            .remote_host
+            .as_ref()
+            .ok_or("❌ No se ha configurado el host remoto en config.toml")?;
+        let user = self
+            .remote_user
+            .as_ref()
+            .ok_or("❌ No se ha configurado el usuario remoto en config.toml")?;
+
+        if self.verbose {
+            self.logger.log_line(&format!(
+                "📤 Transfiriendo artefactos a {}@{}:{}...",
+                user, host, destination
+            ));
+        }
+
+        // rsync -avz --delete ./dist/ user@host:destination
+        let mut command = std::process::Command::new("rsync");
+        command.args(&[
+            "-avz",
+            "--delete",
+            &format!("{}/", dist_path.to_str().unwrap()),
+            &format!("{}@{}:{}", user, host, destination),
+        ]);
+
+        let status = command
+            .status()
+            .map_err(|e| format!("❌ No se pudo ejecutar `rsync`: {}", e))?;
+
+        if status.success() {
+            if self.verbose {
+                self.logger.log_line("✅ Sincronización remota completada.");
+            }
+            Ok(())
+        } else {
+            Err(format!(
+                "❌ `rsync` finalizó con estado {}",
+                status.code().unwrap_or(-1)
+            ))
+        }
     }
 
     fn build_and_deploy(&self, repo_path: &str, destination: &str) -> Result<(), String> {

@@ -91,6 +91,14 @@ fn main() {
         None => {}
     }
 
+    match config.ensure_exists(true) {
+        Ok(_) => {}
+        Err(err) => {
+            eprintln!("❌ {}", err);
+            std::process::exit(1);
+        }
+    }
+
     // Sin argumentos: instalar el servicio y abrir la TUI
     if let Err(err) = install_service() {
         eprintln!(
@@ -100,14 +108,6 @@ fn main() {
         eprintln!("👉 Ejecute `sudo git-sync daemon` o complete la instalación de forma manual.");
     }
 
-    match config.ensure_exists() {
-        Ok(_) => {}
-        Err(err) => {
-            eprintln!("❌ {}", err);
-            std::process::exit(1);
-        }
-    }
-
     if let Err(err) = run_repo_manager(&config) {
         eprintln!("❌ Error al ejecutar el gestor de repositorios: {}", err);
         std::process::exit(1);
@@ -115,7 +115,7 @@ fn main() {
 }
 
 fn run_daemon(config: Config) {
-    let repos_created = match config.ensure_exists() {
+    let repos_created = match config.ensure_exists(false) {
         Ok(created) => created,
         Err(err) => {
             eprintln!("❌ {}", err);
@@ -134,6 +134,10 @@ fn run_daemon(config: Config) {
         logger.log_line("=================================================");
         logger.log_line("🚀 Git Sync - Daemon de sincronización de repositorios");
         logger.log_line("=================================================");
+        logger.log_line(&format!(
+            "🚀 Modo de ejecución: {:?}",
+            settings.mode
+        ));
         logger.log_line(&format!(
             "⏱️ Intervalo de sincronización: {} segundos",
             settings.sync_interval
@@ -172,7 +176,13 @@ fn run_daemon(config: Config) {
 
 fn run_sync_cycle(config: &Config, logger: &Logger, settings: &Settings) {
     let repos = config.read_repos();
-    let processor = RepoProcessor::new(logger, settings.verbose);
+    let processor = RepoProcessor::new(
+        logger,
+        settings.verbose,
+        settings.mode,
+        settings.remote_host.clone(),
+        settings.remote_user.clone(),
+    );
 
     match processor.process_all(repos) {
         Ok(_) => {

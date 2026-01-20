@@ -83,12 +83,12 @@ impl Config {
         }
     }
 
-    pub fn ensure_exists(&self) -> Result<bool, String> {
+    pub fn ensure_exists(&self, interactive: bool) -> Result<bool, String> {
         self.ensure_directory(&self.config_dir, 0o755)?;
         self.ensure_directory(&self.log_dir, 0o755)?;
 
         let repos_created = self.ensure_repos_file()?;
-        self.ensure_settings_file()?;
+        self.ensure_settings_file(interactive)?;
         self.ensure_log_file()?;
 
         if repos_created {
@@ -142,9 +142,17 @@ impl Config {
         Ok(false)
     }
 
-    fn ensure_settings_file(&self) -> Result<(), String> {
+    fn ensure_settings_file(&self, interactive: bool) -> Result<(), String> {
         if !Path::new(&self.settings_file).exists() {
-            let default_settings = Settings::default();
+            let mut default_settings = Settings::default();
+
+            if interactive {
+                let (mode, host, user) = Settings::interactive_init();
+                default_settings.mode = mode;
+                default_settings.remote_host = host;
+                default_settings.remote_user = user;
+            }
+
             let toml_string = toml::to_string_pretty(&default_settings).map_err(|e| {
                 format!(
                     "❌ No se pudo serializar la configuración predeterminada: {}",

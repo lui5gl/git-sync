@@ -141,7 +141,7 @@ pub fn install_service() -> Result<(), String> {
     let (username, home_dir) = resolve_service_user()?;
     let config = Config::new();
 
-    let _ = config.ensure_exists().map_err(|e| {
+    let _ = config.ensure_exists(false).map_err(|e| {
         format!(
             "❌ No se pudo inicializar la estructura de configuración: {}",
             e
