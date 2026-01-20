@@ -75,13 +75,8 @@ jobs:
       run: |
         mkdir -p dist
         cp target/${{ matrix.target }}/release/${{ matrix.artifact_name }} dist/${{ matrix.asset_name }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}
-        if [ "${{ matrix.os }}" = "windows-latest" ]; then
-          cd dist && zip ../dist/${{ matrix.asset_name }}.zip ${{ matrix.asset_name }}.exe && cd ..
-          echo "ASSET_PATH=dist/${{ matrix.asset_name }}.zip" >> $GITHUB_ENV
-        else
-          tar -czf dist/${{ matrix.asset_name }}.tar.gz -C dist ${{ matrix.asset_name }}
-          echo "ASSET_PATH=dist/${{ matrix.asset_name }}.tar.gz" >> $GITHUB_ENV
-        fi
+        tar -czf dist/${{ matrix.asset_name }}.tar.gz -C dist ${{ matrix.asset_name }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+        echo "ASSET_PATH=dist/${{ matrix.asset_name }}.tar.gz" >> $GITHUB_ENV
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -110,9 +105,7 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        files: |
-          artifacts/**/*.tar.gz
-          artifacts/**/*.zip
+        files: artifacts/**/*.tar.gz
         draft: ${{ github.event_name == 'release' && github.event.release.draft }}
         prerelease: ${{ github.event_name == 'release' && github.event.release.prerelease }}
         tag_name: ${{ needs.prepare.outputs.ref }}
