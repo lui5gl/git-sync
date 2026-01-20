@@ -38,6 +38,8 @@ fn print_help() {
       Ejecuta el daemon de sincronización (pensado para systemd).
   • git-sync uninstall-service
       Detiene y elimina el servicio systemd.
+  • git-sync update
+      Actualiza git-sync a la última versión desde GitHub.
   • git-sync --help
       Muestra esta ayuda.
   • git-sync --version
@@ -81,6 +83,10 @@ fn main() {
                 eprintln!("❌ No se pudo desinstalar el servicio: {}", err);
                 std::process::exit(1);
             }
+            return;
+        }
+        Some("update") => {
+            update_self();
             return;
         }
         Some(other) => {
@@ -198,6 +204,38 @@ fn run_sync_cycle(config: &Config, logger: &Logger, settings: &Settings) {
                 logger.log_error("🛑 Finalización por error (stop_on_error=true)");
                 std::process::exit(1);
             }
+        }
+    }
+}
+
+fn update_self() {
+    println!("🔄 Buscando actualizaciones para git-sync...");
+
+    // 1. Detectar el sistema operativo
+    let os = std::env::consts::OS;
+    if os != "linux" {
+        println!("❌ El comando de actualización automática solo está disponible para Linux.");
+        return;
+    }
+
+    // 2. Ejecutar el script de instalación/actualización oficial
+    // Asumimos que el usuario tiene acceso a internet y el script está disponible
+    let status = std::process::Command::new("sh")
+        .arg("-c")
+        .arg("curl -fsSL https://raw.githubusercontent.com/lui5gl/git-sync/main/install.sh | bash")
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            println!("\n✅ ¡git-sync ha sido actualizado correctamente!");
+            println!("👉 Reinicie el servicio si es necesario: `sudo systemctl restart git-sync`.");
+        }
+        Ok(s) => {
+            println!("\n❌ Error al actualizar: el script finalizó con estado {}.", s);
+        }
+        Err(e) => {
+            println!("\n❌ Error al ejecutar el comando de actualización: {}.", e);
+            println!("💡 Asegúrese de tener `curl` instalado.");
         }
     }
 }
