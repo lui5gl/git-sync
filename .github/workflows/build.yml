@@ -46,6 +46,10 @@ jobs:
             target: x86_64-unknown-linux-musl
             artifact_name: git-sync
             asset_name: git-sync-linux-x86_64-musl
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: git-sync.exe
+            asset_name: git-sync-windows-x86_64
 
     steps:
     - name: Checkout code
@@ -67,17 +71,23 @@ jobs:
       run: cargo build --release --target ${{ matrix.target }}
 
     - name: Package artifact
+      shell: bash
       run: |
         mkdir -p dist
-        cp target/${{ matrix.target }}/release/${{ matrix.artifact_name }} dist/${{ matrix.asset_name }}
-        tar -czf dist/${{ matrix.asset_name }}.tar.gz -C dist ${{ matrix.asset_name }}
-        rm dist/${{ matrix.asset_name }}
+        cp target/${{ matrix.target }}/release/${{ matrix.artifact_name }} dist/${{ matrix.asset_name }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          cd dist && zip ../dist/${{ matrix.asset_name }}.zip ${{ matrix.asset_name }}.exe && cd ..
+          echo "ASSET_PATH=dist/${{ matrix.asset_name }}.zip" >> $GITHUB_ENV
+        else
+          tar -czf dist/${{ matrix.asset_name }}.tar.gz -C dist ${{ matrix.asset_name }}
+          echo "ASSET_PATH=dist/${{ matrix.asset_name }}.tar.gz" >> $GITHUB_ENV
+        fi
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.asset_name }}
-        path: dist/${{ matrix.asset_name }}.tar.gz
+        path: ${{ env.ASSET_PATH }}
 
   release:
     name: Create Release
@@ -100,7 +110,9 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        files: artifacts/**/*.tar.gz
+        files: |
+          artifacts/**/*.tar.gz
+          artifacts/**/*.zip
         draft: ${{ github.event_name == 'release' && github.event.release.draft }}
         prerelease: ${{ github.event_name == 'release' && github.event.release.prerelease }}
         tag_name: ${{ needs.prepare.outputs.ref }}
