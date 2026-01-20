@@ -85,10 +85,17 @@ impl Settings {
             }
         }
 
-        // Crear archivo con valores por defecto
-        let default_settings = Settings::default();
+        // Si no existe, iniciamos el modo interactivo
+        let (mode, remote_host, remote_user) = Self::interactive_init();
+
+        // Crear archivo con los valores del modo seleccionado
+        let mut default_settings = Settings::default();
+        default_settings.mode = mode;
+        default_settings.remote_host = remote_host;
+        default_settings.remote_user = remote_user;
+
         let toml_string = toml::to_string_pretty(&default_settings)
-            .expect("❌ No se pudo serializar la configuración predeterminada");
+            .expect("❌ No se pudo serializar la configuración");
 
         if let Err(e) = fs::write(config_file, &toml_string) {
             eprintln!("❌ No se pudo crear config.toml: {}", e);

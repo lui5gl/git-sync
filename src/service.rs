@@ -3,13 +3,92 @@ use chrono::Local;
 use std::env;
 use std::fs::{self, File};
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 
 const SERVICE_NAME: &str = "git-sync";
+#[cfg(unix)]
 const SERVICE_PATH: &str = "/etc/systemd/system/git-sync.service";
 
+pub fn install_service() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        println!("ℹ️ La instalación automática del servicio no está disponible en Windows.");
+        println!("👉 Puede ejecutar `git-sync daemon` manualmente o usar el Programador de tareas.");
+        return Ok(());
+    }
+
+    #[cfg(unix)]
+    {
+        if Path::new(SERVICE_PATH).exists() {
+            return Ok(());
+        }
+
+        let exe_path = env::current_exe().map_err(|e| {
+            format!(
+                "❌ No se pudo determinar la ruta del ejecutable actual: {}",
+                e
+            )
+        })?;
+        let exec_display = exe_path.to_str().ok_or_else(|| {
+            "❌ La ruta del ejecutable contiene caracteres UTF-8 no válidos".to_string()
+        })?;
+
+        let (username, home_dir) = resolve_service_user()?;
+        let config = Config::new();
+
+        let _ = config.ensure_exists(false).map_err(|e| {
+            format!(
+                "❌ No se pudo inicializar la estructura de configuración: {}",
+                e
+            )
+        })?;
+
+        chown_path(&config.log_dir, &username)?;
+        chown_path(&config.log_file, &username)?;
+
+        let service_content = format!(
+            "[Unit]\nDescription=Daemon de sincronización de Git Sync\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nUser={username}\nWorkingDirectory={home_dir}\nEnvironment=HOME={home_dir}\nExecStart={exec_display} daemon\nRestart=on-failure\nRestartSec=60\n\n[Install]\nWantedBy=multi-user.target\n"
+        );
+
+        write_service_file(&service_content)?;
+
+        run_systemctl(&["daemon-reload"]);
+        run_systemctl(&["enable", "--now", SERVICE_NAME]);
+
+        println!("✅ Servicio instalado y habilitado correctamente.");
+        Ok(())
+    }
+}
+
+pub fn uninstall_service() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        println!("ℹ️ La desinstalación automática del servicio no está disponible en Windows.");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    {
+        if !Path::new(SERVICE_PATH).exists() {
+            return Err("ℹ️ El servicio git-sync no está instalado".to_string());
+        }
+
+        run_systemctl(&["disable", "--now", SERVICE_NAME]);
+
+        fs::remove_file(SERVICE_PATH)
+            .map_err(|e| format!("❌ No se pudo eliminar el archivo de servicio: {}", e))?;
+
+        run_systemctl(&["daemon-reload"]);
+
+        println!("🗑️ Archivo de servicio eliminado.");
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
 fn resolve_service_user() -> Result<(String, String), String> {
     fn home_for_user(username: &str) -> Option<String> {
         if let Ok(contents) = fs::read_to_string("/etc/passwd") {
@@ -47,6 +126,7 @@ fn resolve_service_user() -> Result<(String, String), String> {
     )
 }
 
+#[cfg(unix)]
 fn write_service_file(content: &str) -> Result<(), String> {
     let parent = Path::new(SERVICE_PATH)
         .parent()
@@ -81,6 +161,7 @@ fn write_service_file(content: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn run_systemctl(args: &[&str]) {
     let log_error = |message: String| {
         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
@@ -106,6 +187,7 @@ fn run_systemctl(args: &[&str]) {
     }
 }
 
+#[cfg(unix)]
 fn chown_path(path: &str, username: &str) -> Result<(), String> {
     let status = Command::new("chown")
         .arg(format!("{}:{}", username, username))
@@ -121,65 +203,4 @@ fn chown_path(path: &str, username: &str) -> Result<(), String> {
             path, status
         ))
     }
-}
-
-pub fn install_service() -> Result<(), String> {
-    if Path::new(SERVICE_PATH).exists() {
-        return Ok(());
-    }
-
-    let exe_path = env::current_exe().map_err(|e| {
-        format!(
-            "❌ No se pudo determinar la ruta del ejecutable actual: {}",
-            e
-        )
-    })?;
-    let exec_display = exe_path.to_str().ok_or_else(|| {
-        "❌ La ruta del ejecutable contiene caracteres UTF-8 no válidos".to_string()
-    })?;
-
-    let (username, home_dir) = resolve_service_user()?;
-    let config = Config::new();
-
-    let _ = config.ensure_exists(false).map_err(|e| {
-        format!(
-            "❌ No se pudo inicializar la estructura de configuración: {}",
-            e
-        )
-    })?;
-
-    chown_path(&config.log_dir, &username)?;
-    chown_path(&config.log_file, &username)?;
-
-    let service_content = format!(
-        "[Unit]\nDescription=Daemon de sincronización de Git Sync\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nUser={username}\nWorkingDirectory={home_dir}\nEnvironment=HOME={home_dir}\nExecStart={exec_display} daemon\nRestart=on-failure\nRestartSec=60\n\n[Install]\nWantedBy=multi-user.target\n"
-    );
-
-    write_service_file(&service_content)?;
-
-    run_systemctl(&["daemon-reload"]);
-    run_systemctl(&["enable", "--now", SERVICE_NAME]);
-
-    Ok(())
-}
-
-pub fn uninstall_service() -> Result<(), String> {
-    if !Path::new(SERVICE_PATH).exists() {
-        return Err("ℹ️ El servicio git-sync no está instalado".to_string());
-    }
-
-    run_systemctl(&["disable", "--now", SERVICE_NAME]);
-
-    fs::remove_file(SERVICE_PATH)
-        .map_err(|e| format!("❌ No se pudo eliminar el archivo de servicio: {}", e))?;
-
-    run_systemctl(&["daemon-reload"]);
-
-    println!("🗑️ Archivo de servicio eliminado: {}", SERVICE_PATH);
-    println!(
-        "🔍 Verifique la eliminación del servicio con: sudo systemctl status {}",
-        SERVICE_NAME
-    );
-
-    Ok(())
 }
