@@ -1,13 +1,21 @@
+#[cfg(unix)]
 use crate::config::Config;
+#[cfg(unix)]
 use chrono::Local;
+#[cfg(unix)]
 use std::env;
+#[cfg(unix)]
 use std::fs::{self, File};
+#[cfg(unix)]
 use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
 use std::path::Path;
+#[cfg(unix)]
 use std::process::Command;
 
+#[cfg(unix)]
 const SERVICE_NAME: &str = "git-sync";
 #[cfg(unix)]
 const SERVICE_PATH: &str = "/etc/systemd/system/git-sync.service";
