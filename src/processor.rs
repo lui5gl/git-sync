@@ -9,8 +9,12 @@ pub struct RepoProcessor<'a> {
     logger: &'a Logger,
     verbose: bool,
     mode: AppMode,
-    remote_host: Option<String>,
-    remote_user: Option<String>,
+}
+
+struct DeployConfig {
+    user: String,
+    host: String,
+    path: String,
 }
 
 impl<'a> RepoProcessor<'a> {
@@ -18,15 +22,11 @@ impl<'a> RepoProcessor<'a> {
         logger: &'a Logger,
         verbose: bool,
         mode: AppMode,
-        remote_host: Option<String>,
-        remote_user: Option<String>,
     ) -> Self {
         RepoProcessor {
             logger,
             verbose,
             mode,
-            remote_host,
-            remote_user,
         }
     }
 
@@ -114,14 +114,13 @@ impl<'a> RepoProcessor<'a> {
                 }
             }
             AppMode::Development => {
-                if let Some(target) = &repo.deploy_target {
-                    self.build_and_remote_deploy(&repo.repo_path, target)?;
-                } else {
-                    self.logger.log_line(&format!(
-                        "⚠️ No se ha definido un destino (deploy target) para {}, saltando upload.",
-                        repo.repo_path
-                    ));
-                }
+                let deploy = self.load_deploy_config(&repo.repo_path)?;
+                self.build_and_remote_deploy(
+                    &repo.repo_path,
+                    &deploy.path,
+                    &deploy.user,
+                    &deploy.host,
+                )?;
             }
         }
 
@@ -211,7 +210,13 @@ impl<'a> RepoProcessor<'a> {
         Ok(())
     }
 
-    fn build_and_remote_deploy(&self, repo_path: &str, destination: &str) -> Result<(), String> {
+    fn build_and_remote_deploy(
+        &self,
+        repo_path: &str,
+        destination: &str,
+        user: &str,
+        host: &str,
+    ) -> Result<(), String> {
         self.run_build(repo_path)?;
 
         let dist_path = Path::new(repo_path).join("dist");
@@ -221,15 +226,6 @@ impl<'a> RepoProcessor<'a> {
                 dist_path.display()
             ));
         }
-
-        let host = self
-            .remote_host
-            .as_ref()
-            .ok_or("❌ No se ha configurado el host remoto en config.toml")?;
-        let user = self
-            .remote_user
-            .as_ref()
-            .ok_or("❌ No se ha configurado el usuario remoto en config.toml")?;
 
         if self.verbose {
             self.logger.log_line(&format!(
@@ -262,6 +258,77 @@ impl<'a> RepoProcessor<'a> {
                 status.code().unwrap_or(-1)
             ))
         }
+    }
+
+    fn load_deploy_config(&self, repo_path: &str) -> Result<DeployConfig, String> {
+        let env_path = self
+            .find_env_file(repo_path)
+            .ok_or("❌ No se encontro .env o .env.production en el proyecto")?;
+
+        let content = fs::read_to_string(&env_path)
+            .map_err(|e| format!("❌ No se pudo leer el archivo .env: {}", e))?;
+
+        let mut server: Option<String> = None;
+        let mut path: Option<String> = None;
+
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+
+            if let Some((key, value)) = trimmed.split_once('=') {
+                let key = key.trim();
+                let value = value
+                    .trim()
+                    .trim_matches(|c| c == '"' || c == '\'');
+                match key {
+                    "GIT_SYNC_DEPLOY_SERVER" => server = Some(value.to_string()),
+                    "GIT_SYNC_DEPLOY_PATH" => path = Some(value.to_string()),
+                    _ => {}
+                }
+            }
+        }
+
+        let server = server.ok_or("❌ Falta GIT_SYNC_DEPLOY_SERVER en .env")?;
+        let path = path.ok_or("❌ Falta GIT_SYNC_DEPLOY_PATH en .env")?;
+
+        let (user, host) = if let Some((user, host)) = server.split_once('@') {
+            (user.to_string(), host.to_string())
+        } else {
+            return Err(
+                "❌ GIT_SYNC_DEPLOY_SERVER debe incluir usuario@host".to_string(),
+            );
+        };
+
+        if user.trim().is_empty() || host.trim().is_empty() {
+            return Err("❌ GIT_SYNC_DEPLOY_SERVER invalido".to_string());
+        }
+
+        if path.trim().is_empty() {
+            return Err("❌ GIT_SYNC_DEPLOY_PATH no puede estar vacio".to_string());
+        }
+
+        Ok(DeployConfig { user, host, path })
+    }
+
+    fn find_env_file(&self, repo_path: &str) -> Option<String> {
+        let path = Path::new(repo_path);
+        if !path.is_dir() {
+            return None;
+        }
+
+        let dot_env_production = path.join(".env.production");
+        if dot_env_production.exists() {
+            return dot_env_production.to_str().map(|s| s.to_string());
+        }
+
+        let dot_env = path.join(".env");
+        if dot_env.exists() {
+            return dot_env.to_str().map(|s| s.to_string());
+        }
+
+        None
     }
 
     fn build_and_deploy(&self, repo_path: &str, destination: &str) -> Result<(), String> {

@@ -149,6 +149,7 @@ impl Config {
                                    # Use rutas locales del servidor (no URLs de GitHub/GitLab)\n\
                                    # Para proyectos que requieren compilar y desplegar, utilice:\n\
                                    # /ruta/al/proyecto => /ruta/destino\n\
+                                   # Nota: en modo Development este archivo no se usa\n\
                                    # Ejemplos:\n\
                                    # Proyecto sin compilación: /var/www/html/mi-app\n\
                                    # Proyecto con compilación: /root/proyects/mi-app => /var/www/html/mi-app/public\n";
@@ -182,10 +183,10 @@ impl Config {
             let mut default_settings = Settings::default();
 
             if interactive {
-                let (mode, host, user) = Settings::interactive_init();
+                let mode = Settings::interactive_init();
                 default_settings.mode = mode;
-                default_settings.remote_host = host;
-                default_settings.remote_user = user;
+                default_settings.remote_host = None;
+                default_settings.remote_user = None;
             }
 
             let toml_string = toml::to_string_pretty(&default_settings).map_err(|e| {
@@ -263,6 +264,7 @@ impl Config {
         content.push_str("# Especifique una ruta absoluta por línea (ruta local, no URL remota)\n");
         content.push_str("# Para proyectos que requieren build, utilice el formato:\n");
         content.push_str("#   /ruta/al/proyecto => /ruta/destino\n");
+        content.push_str("# Nota: en modo Development este archivo no se usa\n");
         content.push_str("# Ejemplos:\n");
         content.push_str("#   Proyecto sin compilación: /var/www/html/mi-app\n");
         content.push_str(

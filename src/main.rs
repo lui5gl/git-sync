@@ -6,11 +6,11 @@ mod service;
 mod settings;
 mod tui;
 
-use config::Config;
+use config::{Config, RepoDefinition};
 use logger::Logger;
 use processor::RepoProcessor;
 use service::{install_service, uninstall_service};
-use settings::Settings;
+use settings::{AppMode, Settings};
 use std::env;
 use std::thread;
 use std::time::Duration;
@@ -51,8 +51,9 @@ fn print_help() {
   • Registros      → /var/log/git-sync/git-sync.log
 
 🛠️ Recuerde
-  • Utilice rutas locales del servidor (no URLs remotas).
-  • Proyectos con compilación: fuente en /root/proyects y despliegue en /var/www/html/...
+    • Utilice rutas locales del servidor (no URLs remotas).
+    • En modo Development se usa el repo actual y .env/.env.production (GIT_SYNC_DEPLOY_SERVER y GIT_SYNC_DEPLOY_PATH).
+    • Proyectos con compilación: fuente en /root/proyects y despliegue en /var/www/html/...
   • Revise los permisos de archivos si ejecuta como otro usuario.
 "#,
         version = VERSION
@@ -107,6 +108,14 @@ fn main() {
 
     let settings = Settings::load_or_create(&config.settings_file);
 
+    if settings.mode == AppMode::Development {
+        if let Err(err) = run_dev_local(&config, &settings, true) {
+            eprintln!("❌ {}", err);
+            std::process::exit(1);
+        }
+        return;
+    }
+
     // Sin argumentos: instalar el servicio y abrir la TUI
     if let Err(err) = install_service() {
         eprintln!(
@@ -137,6 +146,14 @@ fn run_daemon(config: Config) {
 
     let mut settings = Settings::load_or_create(&config.settings_file);
     let logger = Logger::new(config.log_file.clone());
+
+    if settings.mode == AppMode::Development {
+        if let Err(err) = run_dev_local(&config, &settings, false) {
+            logger.log_error(&err);
+            std::process::exit(1);
+        }
+        return;
+    }
 
     if settings.verbose {
         logger.log_line("=================================================");
@@ -184,13 +201,7 @@ fn run_daemon(config: Config) {
 
 fn run_sync_cycle(config: &Config, logger: &Logger, settings: &Settings) {
     let repos = config.read_repos();
-    let processor = RepoProcessor::new(
-        logger,
-        settings.verbose,
-        settings.mode,
-        settings.remote_host.clone(),
-        settings.remote_user.clone(),
-    );
+    let processor = RepoProcessor::new(logger, settings.verbose, settings.mode);
 
     match processor.process_all(repos) {
         Ok(_) => {
@@ -206,6 +217,135 @@ fn run_sync_cycle(config: &Config, logger: &Logger, settings: &Settings) {
             }
         }
     }
+}
+
+fn run_dev_local(config: &Config, settings: &Settings, interactive: bool) -> Result<(), String> {
+    let logger = Logger::new(config.log_file.clone());
+    let repo_path = env::current_dir()
+        .map_err(|e| format!("No se pudo obtener el directorio actual: {}", e))?
+        .to_string_lossy()
+        .to_string();
+
+    if interactive {
+        ensure_env_for_repo(&repo_path)?;
+    }
+
+    if !settings.continuous_mode {
+        run_dev_cycle(&logger, settings, &repo_path);
+        return Ok(());
+    }
+
+    loop {
+        run_dev_cycle(&logger, settings, &repo_path);
+
+        if settings.verbose {
+            logger.log_line(&format!(
+                "\n⏳ En espera de {} segundos antes del siguiente ciclo...\n",
+                settings.sync_interval
+            ));
+        }
+
+        thread::sleep(Duration::from_secs(settings.sync_interval));
+    }
+}
+
+fn run_dev_cycle(logger: &Logger, settings: &Settings, repo_path: &str) {
+    let repos = vec![RepoDefinition::new(repo_path, Option::<String>::None)];
+    let processor = RepoProcessor::new(logger, settings.verbose, settings.mode);
+
+    if let Err(e) = processor.process_all(repos) {
+        logger.log_error(&e);
+        if settings.stop_on_error {
+            logger.log_error("🛑 Finalización por error (stop_on_error=true)");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn ensure_env_for_repo(repo_path: &str) -> Result<(), String> {
+    use std::io::{self, Write};
+    use std::path::Path;
+
+    let repo_dir = Path::new(repo_path);
+    if !repo_dir.is_dir() {
+        return Err("El directorio actual no es valido".to_string());
+    }
+
+    let env_production = repo_dir.join(".env.production");
+    let env_default = repo_dir.join(".env");
+    let env_path = if env_production.exists() {
+        env_production
+    } else {
+        env_default
+    };
+
+    let existing = if env_path.exists() {
+        std::fs::read_to_string(&env_path).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let mut server: Option<String> = None;
+    let mut path: Option<String> = None;
+
+    for line in existing.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if let Some((key, value)) = trimmed.split_once('=') {
+            let key = key.trim();
+            let value = value
+                .trim()
+                .trim_matches(|c| c == '"' || c == '\'');
+            match key {
+                "GIT_SYNC_DEPLOY_SERVER" => server = Some(value.to_string()),
+                "GIT_SYNC_DEPLOY_PATH" => path = Some(value.to_string()),
+                _ => {}
+            }
+        }
+    }
+
+    if server.as_deref().unwrap_or("").is_empty() {
+        print!("🌐 GIT_SYNC_DEPLOY_SERVER (usuario@host): ");
+        io::stdout().flush().map_err(|e| e.to_string())?;
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).map_err(|e| e.to_string())?;
+        let input = input.trim().to_string();
+        if input.is_empty() || !input.contains('@') {
+            return Err("GIT_SYNC_DEPLOY_SERVER invalido".to_string());
+        }
+        server = Some(input);
+    }
+
+    if path.as_deref().unwrap_or("").is_empty() {
+        print!("📦 GIT_SYNC_DEPLOY_PATH (ej: /var/www/html/app): ");
+        io::stdout().flush().map_err(|e| e.to_string())?;
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).map_err(|e| e.to_string())?;
+        let input = input.trim().to_string();
+        if input.is_empty() {
+            return Err("GIT_SYNC_DEPLOY_PATH no puede estar vacio".to_string());
+        }
+        path = Some(input);
+    }
+
+    let mut lines: Vec<String> = existing.lines().map(|l| l.to_string()).collect();
+    lines.retain(|l| {
+        !l.starts_with("GIT_SYNC_DEPLOY_SERVER=") && !l.starts_with("GIT_SYNC_DEPLOY_PATH=")
+    });
+
+    if let Some(value) = server {
+        lines.push(format!("GIT_SYNC_DEPLOY_SERVER={}", value));
+    }
+    if let Some(value) = path {
+        lines.push(format!("GIT_SYNC_DEPLOY_PATH={}", value));
+    }
+
+    std::fs::write(&env_path, lines.join("\n"))
+        .map_err(|e| format!("No se pudo escribir en {}: {}", env_path.display(), e))?;
+
+    Ok(())
 }
 
 fn update_self() {

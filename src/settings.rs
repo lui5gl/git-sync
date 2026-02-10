@@ -21,10 +21,10 @@ pub struct Settings {
     /// Modo de aplicación: production (solo pull) o development (solo push/transfer)
     pub mode: AppMode,
 
-    /// IP o Hostname del servidor remoto (solo para modo Development)
+    /// IP o Hostname del servidor remoto (no se usa en modo Development actual)
     pub remote_host: Option<String>,
 
-    /// Usuario SSH para el servidor remoto (solo para modo Development)
+    /// Usuario SSH para el servidor remoto (no se usa en modo Development actual)
     pub remote_user: Option<String>,
 
     /// Tiempo de espera entre ciclos de sincronización (en segundos)
@@ -86,13 +86,13 @@ impl Settings {
         }
 
         // Si no existe, iniciamos el modo interactivo
-        let (mode, remote_host, remote_user) = Self::interactive_init();
+        let mode = Self::interactive_init();
 
         // Crear archivo con los valores del modo seleccionado
         let mut default_settings = Settings::default();
         default_settings.mode = mode;
-        default_settings.remote_host = remote_host;
-        default_settings.remote_user = remote_user;
+        default_settings.remote_host = None;
+        default_settings.remote_user = None;
 
         let toml_string = toml::to_string_pretty(&default_settings)
             .expect("❌ No se pudo serializar la configuración");
@@ -118,7 +118,7 @@ impl Settings {
         }
     }
 
-    pub fn interactive_init() -> (AppMode, Option<String>, Option<String>) {
+    pub fn interactive_init() -> AppMode {
         use std::io::{self, Write};
 
         println!("\n🚀 Bienvenido a git-sync!");
@@ -143,24 +143,11 @@ impl Settings {
             match input.trim() {
                 "1" => {
                     println!("✅ Modo Producción seleccionado.");
-                    return (AppMode::Production, None, None);
+                    return AppMode::Production;
                 }
                 "2" => {
                     println!("✅ Modo Desarrollo seleccionado.");
-                    
-                    print!("🌐 Ingrese la IP o Hostname del servidor: ");
-                    io::stdout().flush().unwrap();
-                    let mut host = String::new();
-                    io::stdin().read_line(&mut host).unwrap();
-                    let host = host.trim().to_string();
-
-                    print!("👤 Ingrese el usuario SSH (ej: root): ");
-                    io::stdout().flush().unwrap();
-                    let mut user = String::new();
-                    io::stdin().read_line(&mut user).unwrap();
-                    let user = user.trim().to_string();
-
-                    return (AppMode::Development, Some(host), Some(user));
+                    return AppMode::Development;
                 }
                 _ => {
                     println!("⚠️ Opción no válida. Por favor, ingrese 1 o 2.");
