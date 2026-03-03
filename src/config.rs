@@ -108,12 +108,12 @@ impl Config {
         }
     }
 
-    pub fn ensure_exists(&self, interactive: bool) -> Result<bool, String> {
+    pub fn ensure_exists(&self) -> Result<bool, String> {
         self.ensure_directory(&self.config_dir, 0o755)?;
         self.ensure_directory(&self.log_dir, 0o755)?;
 
         let repos_created = self.ensure_repos_file()?;
-        self.ensure_settings_file(interactive)?;
+        self.ensure_settings_file()?;
         self.ensure_log_file()?;
 
         if repos_created {
@@ -149,7 +149,6 @@ impl Config {
                                    # Use rutas locales del servidor (no URLs de GitHub/GitLab)\n\
                                    # Para proyectos que requieren compilar y desplegar, utilice:\n\
                                    # /ruta/al/proyecto => /ruta/destino\n\
-                                   # Nota: en modo Development este archivo no se usa\n\
                                    # Ejemplos:\n\
                                    # Proyecto sin compilación: /var/www/html/mi-app\n\
                                    # Proyecto con compilación: /root/proyects/mi-app => /var/www/html/mi-app/public\n";
@@ -178,16 +177,9 @@ impl Config {
         Ok(false)
     }
 
-    fn ensure_settings_file(&self, interactive: bool) -> Result<(), String> {
+    fn ensure_settings_file(&self) -> Result<(), String> {
         if !Path::new(&self.settings_file).exists() {
-            let mut default_settings = Settings::default();
-
-            if interactive {
-                let mode = Settings::interactive_init();
-                default_settings.mode = mode;
-                default_settings.remote_host = None;
-                default_settings.remote_user = None;
-            }
+            let default_settings = Settings::default();
 
             let toml_string = toml::to_string_pretty(&default_settings).map_err(|e| {
                 format!(
@@ -264,7 +256,6 @@ impl Config {
         content.push_str("# Especifique una ruta absoluta por línea (ruta local, no URL remota)\n");
         content.push_str("# Para proyectos que requieren build, utilice el formato:\n");
         content.push_str("#   /ruta/al/proyecto => /ruta/destino\n");
-        content.push_str("# Nota: en modo Development este archivo no se usa\n");
         content.push_str("# Ejemplos:\n");
         content.push_str("#   Proyecto sin compilación: /var/www/html/mi-app\n");
         content.push_str(

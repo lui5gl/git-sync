@@ -2,31 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
-pub enum AppMode {
-    #[serde(rename = "production")]
-    Production,
-    #[serde(rename = "development")]
-    Development,
-}
-
-impl Default for AppMode {
-    fn default() -> Self {
-        AppMode::Production
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
-    /// Modo de aplicación: production (solo pull) o development (solo push/transfer)
-    pub mode: AppMode,
-
-    /// IP o Hostname del servidor remoto (no se usa en modo Development actual)
-    pub remote_host: Option<String>,
-
-    /// Usuario SSH para el servidor remoto (no se usa en modo Development actual)
-    pub remote_user: Option<String>,
-
     /// Tiempo de espera entre ciclos de sincronización (en segundos)
     pub sync_interval: u64,
 
@@ -49,9 +26,6 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
-            mode: AppMode::Production,
-            remote_host: None,
-            remote_user: None,
             sync_interval: 60,
             stop_on_error: true,
             git_timeout: 300,
@@ -65,7 +39,6 @@ impl Default for Settings {
 impl Settings {
     pub fn load_or_create(config_file: &str) -> Self {
         if Path::new(config_file).exists() {
-            // Intentar cargar el archivo existente
             match fs::read_to_string(config_file) {
                 Ok(contents) => match toml::from_str(&contents) {
                     Ok(settings) => return settings,
@@ -85,14 +58,7 @@ impl Settings {
             }
         }
 
-        // Si no existe, iniciamos el modo interactivo
-        let mode = Self::interactive_init();
-
-        // Crear archivo con los valores del modo seleccionado
-        let mut default_settings = Settings::default();
-        default_settings.mode = mode;
-        default_settings.remote_host = None;
-        default_settings.remote_user = None;
+        let default_settings = Settings::default();
 
         let toml_string = toml::to_string_pretty(&default_settings)
             .expect("❌ No se pudo serializar la configuración");
@@ -113,44 +79,6 @@ impl Settings {
                 *self = new_settings;
                 if was_verbose && self.verbose {
                     println!("🔄 Configuración recargada");
-                }
-            }
-        }
-    }
-
-    pub fn interactive_init() -> AppMode {
-        use std::io::{self, Write};
-
-        println!("\n🚀 Bienvenido a git-sync!");
-        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        println!("Parece que es la primera vez que inicia la aplicación.");
-        println!("Por favor, seleccione el modo de funcionamiento:");
-        println!("\n1) 🚀 Producción (Servidor)");
-        println!("   • Solo descarga cambios del remoto (git pull).");
-        println!("   • Útil para servidores donde se despliega el código.");
-        println!("\n2) 💻 Desarrollo (Local)");
-        println!("   • Compila el proyecto localmente y sube los artefactos al servidor.");
-        println!("   • Útil para su equipo de trabajo local.");
-        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-        loop {
-            print!("\nSeleccione una opción (1 o 2): ");
-            io::stdout().flush().unwrap();
-
-            let mut input = String::new();
-            io::stdin().read_line(&mut input).unwrap();
-
-            match input.trim() {
-                "1" => {
-                    println!("✅ Modo Producción seleccionado.");
-                    return AppMode::Production;
-                }
-                "2" => {
-                    println!("✅ Modo Desarrollo seleccionado.");
-                    return AppMode::Development;
-                }
-                _ => {
-                    println!("⚠️ Opción no válida. Por favor, ingrese 1 o 2.");
                 }
             }
         }

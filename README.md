@@ -8,6 +8,7 @@ Daemon ligero que mantiene múltiples repositorios Git al día y, cuando corresp
 
 - 🔁 **Sincronización automática** de cualquier número de repositorios Git locales desde su `origin`.
 - 🛠️ **Modo build opcional**: tras actualizar el código ejecuta `bun`, `pnpm`, `yarn` o `npm` (en ese orden de prioridad) con `run build` y copia el contenido de `dist/` al destino que definas.
+- ✅ **Flujo único de producción**: no existe modo `Development`; el daemon sincroniza y despliega usando rutas locales configuradas.
 - 🧭 **Detección de rama**: usa la rama remota declarada como HEAD (`origin/main`, `origin/master`, etc.); si no existe, intenta con `main` y luego con `master`.
 - 🖥️ **Interfaz TUI** (terminal) para añadir, editar o eliminar repositorios sin tocar archivos manualmente.
 - 🪵 **Logging persistente** en `/var/log/git-sync/git-sync.log` con marcas de tiempo y mensajes claros (emojis incluidos).
@@ -29,7 +30,7 @@ sudo git-sync          # Primera ejecución: crea la configuración y abre la TU
 
 ### Usar un release publicado
 
-1. Descarga el artefacto deseado desde la sección **Releases** (versión 4.2.0).
+1. Descarga el artefacto deseado desde la sección **Releases**.
 2. Descomprime y mueve el binario a tu `PATH`:
 
 ```bash
@@ -127,7 +128,7 @@ Los comandos `systemctl` exitosos no imprimen nada para evitar ruido; cualquier 
 
 ## Funcionamiento interno
 
-1. **Detección de rama**: se intenta leer `refs/remotes/origin/HEAD`. Si no existe, se prubea `origin/main`; si tampoco, `origin/master`.
+1. **Detección de rama**: se intenta leer `refs/remotes/origin/HEAD`. Si no existe, se prueba `origin/main`; si tampoco, `origin/master`.
 2. **Sincronización**:
    - `git fetch`
    - Contar commits pendientes (`rev-list HEAD..origin/<branch>`)
