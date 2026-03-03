@@ -12,6 +12,10 @@ use processor::RepoProcessor;
 use service::{install_service, uninstall_service};
 use settings::Settings;
 use std::env;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::thread;
 use std::time::Duration;
 use tui::run_repo_manager;
@@ -39,7 +43,7 @@ fn print_help() {
   • git-sync uninstall-service
       Detiene y elimina el servicio systemd.
   • git-sync update
-      Actualiza git-sync a la última versión desde GitHub.
+      Actualiza a la última versión estable.
   • git-sync --help
       Muestra esta ayuda.
   • git-sync --version
@@ -86,7 +90,15 @@ fn main() {
             return;
         }
         Some("update") => {
-            update_self();
+            if args.len() > 2 {
+                eprintln!("❌ Uso inválido: `git-sync update` no acepta parámetros.");
+                std::process::exit(1);
+            }
+
+            if let Err(err) = update_self() {
+                eprintln!("❌ {}", err);
+                std::process::exit(1);
+            }
             return;
         }
         Some(other) => {
@@ -196,34 +208,187 @@ fn run_sync_cycle(config: &Config, logger: &Logger, settings: &Settings) {
     }
 }
 
-fn update_self() {
-    println!("🔄 Buscando actualizaciones para git-sync...");
+fn update_self() -> Result<(), String> {
+    println!("🔄 Buscando la última versión en GitHub Releases...");
 
-    // 1. Detectar el sistema operativo
-    let os = std::env::consts::OS;
-    if os != "linux" {
-        println!("❌ El comando de actualización automática solo está disponible para Linux.");
-        return;
+    if env::consts::OS != "linux" {
+        return Err("La actualización automática solo está disponible para Linux.".to_string());
     }
 
-    // 2. Ejecutar el script de instalación/actualización oficial
-    // Asumimos que el usuario tiene acceso a internet y el script está disponible
-    let status = std::process::Command::new("sh")
-        .arg("-c")
-        .arg("curl -fsSL https://raw.githubusercontent.com/lui5gl/git-sync/main/install.sh | bash")
-        .status();
+    if env::consts::ARCH != "x86_64" {
+        return Err(format!(
+            "Arquitectura no soportada para auto-actualización: {} (se espera x86_64).",
+            env::consts::ARCH
+        ));
+    }
 
-    match status {
-        Ok(s) if s.success() => {
-            println!("\n✅ ¡git-sync ha sido actualizado correctamente!");
-            println!("👉 Reinicie el servicio si es necesario: `sudo systemctl restart git-sync`.");
+    let latest_tag = fetch_latest_release_tag()?;
+    install_release(&latest_tag)?;
+
+    println!("\n✅ ¡git-sync se actualizó correctamente a {}!", latest_tag);
+    println!("👉 Reinicie el servicio: `sudo systemctl restart git-sync`.");
+    Ok(())
+}
+
+fn fetch_latest_release_tag() -> Result<String, String> {
+    let output = Command::new("curl")
+        .args([
+            "-fsSL",
+            "-H",
+            "Accept: application/vnd.github+json",
+            "-H",
+            "User-Agent: git-sync-updater",
+            "https://api.github.com/repos/lui5gl/git-sync/releases/latest",
+        ])
+        .output()
+        .map_err(|e| format!("No se pudo ejecutar `curl`: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "No se pudo consultar releases en GitHub (estado {}).",
+            output.status
+        ));
+    }
+
+    let body = String::from_utf8(output.stdout)
+        .map_err(|e| format!("La respuesta de GitHub no es UTF-8 válida: {}", e))?;
+
+    extract_json_string_value(&body, "tag_name")
+        .ok_or("No se pudo obtener el tag de la última release.".to_string())
+}
+
+fn extract_json_string_value(json: &str, key: &str) -> Option<String> {
+    let pattern = format!("\"{}\":\"", key);
+    let index = json.find(&pattern)?;
+    let value_start = index + pattern.len();
+    let value_end_relative = json[value_start..].find('"')?;
+    let value_end = value_start + value_end_relative;
+    Some(json[value_start..value_end].to_string())
+}
+
+fn detect_asset_name() -> String {
+    let output = Command::new("ldd").arg("--version").output();
+    let is_musl = match output {
+        Ok(out) => {
+            let text = format!(
+                "{}\n{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            )
+            .to_lowercase();
+            text.contains("musl")
         }
-        Ok(s) => {
-            println!("\n❌ Error al actualizar: el script finalizó con estado {}.", s);
+        Err(_) => false,
+    };
+
+    if is_musl {
+        "git-sync-linux-x86_64-musl.tar.gz".to_string()
+    } else {
+        "git-sync-linux-x86_64-glibc.tar.gz".to_string()
+    }
+}
+
+fn install_release(tag: &str) -> Result<(), String> {
+    let asset = detect_asset_name();
+    let url = format!(
+        "https://github.com/lui5gl/git-sync/releases/download/{}/{}",
+        tag, asset
+    );
+
+    let temp_dir = env::temp_dir().join(format!("git-sync-update-{}", std::process::id()));
+    if temp_dir.exists() {
+        fs::remove_dir_all(&temp_dir)
+            .map_err(|e| format!("No se pudo limpiar el directorio temporal: {}", e))?;
+    }
+    fs::create_dir_all(&temp_dir)
+        .map_err(|e| format!("No se pudo crear el directorio temporal: {}", e))?;
+
+    let archive_path = temp_dir.join(&asset);
+    let archive_path_str = path_to_str(&archive_path)?;
+
+    println!("⬇️ Descargando {} ...", tag);
+    let download_status = Command::new("curl")
+        .args(["-fL", &url, "-o", archive_path_str])
+        .status()
+        .map_err(|e| format!("No se pudo ejecutar `curl`: {}", e))?;
+    if !download_status.success() {
+        return Err(format!(
+            "No se pudo descargar {} (estado {}).",
+            url, download_status
+        ));
+    }
+
+    let temp_dir_str = path_to_str(&temp_dir)?;
+    let extract_status = Command::new("tar")
+        .args(["-xzf", archive_path_str, "-C", temp_dir_str])
+        .status()
+        .map_err(|e| format!("No se pudo ejecutar `tar`: {}", e))?;
+    if !extract_status.success() {
+        return Err(format!(
+            "No se pudo extraer el archivo descargado (estado {}).",
+            extract_status
+        ));
+    }
+
+    let new_binary = find_binary_in_dir(&temp_dir)
+        .ok_or("No se encontró el binario `git-sync` dentro del release descargado.")?;
+    let current_binary = env::current_exe()
+        .map_err(|e| format!("No se pudo detectar la ruta del binario actual: {}", e))?;
+    let staged_binary = staged_path(&current_binary)?;
+
+    fs::copy(&new_binary, &staged_binary).map_err(|e| {
+        format!(
+            "No se pudo copiar el nuevo binario desde {} a {}: {}",
+            new_binary.display(),
+            staged_binary.display(),
+            e
+        )
+    })?;
+
+    let permissions = fs::Permissions::from_mode(0o755);
+    fs::set_permissions(&staged_binary, permissions)
+        .map_err(|e| format!("No se pudieron ajustar permisos del nuevo binario: {}", e))?;
+
+    fs::rename(&staged_binary, &current_binary).map_err(|e| {
+        format!(
+            "No se pudo reemplazar el binario actual en {}: {}",
+            current_binary.display(),
+            e
+        )
+    })?;
+
+    let _ = fs::remove_dir_all(&temp_dir);
+    Ok(())
+}
+
+fn path_to_str(path: &Path) -> Result<&str, String> {
+    path.to_str()
+        .ok_or_else(|| format!("Ruta con caracteres UTF-8 inválidos: {}", path.display()))
+}
+
+fn staged_path(current_binary: &Path) -> Result<PathBuf, String> {
+    let file_name = current_binary
+        .file_name()
+        .and_then(|f| f.to_str())
+        .ok_or_else(|| "No se pudo resolver el nombre del binario actual.".to_string())?;
+    Ok(current_binary.with_file_name(format!("{}.new", file_name)))
+}
+
+fn find_binary_in_dir(root: &Path) -> Option<PathBuf> {
+    let entries = fs::read_dir(root).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(found) = find_binary_in_dir(&path) {
+                return Some(found);
+            }
+            continue;
         }
-        Err(e) => {
-            println!("\n❌ Error al ejecutar el comando de actualización: {}.", e);
-            println!("💡 Asegúrese de tener `curl` instalado.");
+
+        let name = path.file_name().and_then(|n| n.to_str());
+        if name == Some("git-sync") {
+            return Some(path);
         }
     }
+    None
 }

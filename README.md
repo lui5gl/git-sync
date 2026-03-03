@@ -128,6 +128,18 @@ Los comandos `systemctl` exitosos no imprimen nada para evitar ruido; cualquier 
 
 ---
 
+## Actualización del binario
+
+Puedes actualizar `git-sync` directamente desde GitHub Releases:
+
+```bash
+git-sync update                    # Actualiza a la última versión estable
+```
+
+`git-sync` detecta automáticamente si usar artefacto `glibc` o `musl` en Linux x86_64.
+
+---
+
 ## Funcionamiento interno
 
 1. **Detección de rama**: se intenta leer `refs/remotes/origin/HEAD`. Si no existe, se prueba `origin/main`; si tampoco, `origin/master`.
