@@ -402,7 +402,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                 Constraint::Min(8),
                 Constraint::Length(3),
                 Constraint::Length(3),
-                Constraint::Length(2),
+                Constraint::Length(3),
             ]
             .as_ref(),
         )
@@ -559,9 +559,23 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         .block(Block::default().borders(Borders::ALL).title("Estado"));
     frame.render_widget(status, chunks[3]);
 
-    let shortcuts = Paragraph::new(
-        "↑/↓ mover  a añadir  e/Enter editar  d eliminar  Esc cancelar  q salir  Ctrl+C salir",
-    )
-    .style(Style::default().fg(Color::Black).bg(Color::Gray));
+    let shortcuts = Paragraph::new(Line::from(vec![
+        Span::styled(" ↑/↓ ", Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::raw(" mover  "),
+        Span::styled(" A ", Style::default().fg(Color::Black).bg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::raw(" añadir  "),
+        Span::styled(" E/Enter ", Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::raw(" editar  "),
+        Span::styled(" D ", Style::default().fg(Color::White).bg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::raw(" eliminar  "),
+        Span::styled(" Esc ", Style::default().fg(Color::Black).bg(Color::Gray).add_modifier(Modifier::BOLD)),
+        Span::raw(" cancelar  "),
+        Span::styled(" Q ", Style::default().fg(Color::Black).bg(Color::Magenta).add_modifier(Modifier::BOLD)),
+        Span::raw(" salir  "),
+        Span::styled(" Ctrl+C ", Style::default().fg(Color::Black).bg(Color::Blue).add_modifier(Modifier::BOLD)),
+        Span::raw(" salir"),
+    ]))
+    .style(Style::default().fg(Color::White))
+    .block(Block::default().borders(Borders::ALL).title("Atajos"));
     frame.render_widget(shortcuts, chunks[4]);
 }
