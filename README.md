@@ -134,6 +134,7 @@ Puedes actualizar `git-sync` directamente desde GitHub Releases:
 
 ```bash
 git-sync update                    # Actualiza a la última versión estable
+git-sync --add-current             # Pregunta si agrega el directorio actual
 ```
 
 `git-sync` detecta automáticamente si usar artefacto `glibc` o `musl` en Linux x86_64.

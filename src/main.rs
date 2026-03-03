@@ -6,13 +6,14 @@ mod service;
 mod settings;
 mod tui;
 
-use config::Config;
+use config::{Config, RepoDefinition};
 use logger::Logger;
 use processor::RepoProcessor;
 use service::{install_service, uninstall_service};
 use settings::Settings;
 use std::env;
 use std::fs;
+use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -44,6 +45,8 @@ fn print_help() {
       Detiene y elimina el servicio systemd.
   • git-sync update
       Actualiza a la última versión estable.
+  • git-sync --add-current
+      Pregunta si desea agregar el directorio actual como repositorio.
   • git-sync --help
       Muestra esta ayuda.
   • git-sync --version
@@ -96,6 +99,17 @@ fn main() {
             }
 
             if let Err(err) = update_self() {
+                eprintln!("❌ {}", err);
+                std::process::exit(1);
+            }
+            return;
+        }
+        Some("--add-current") => {
+            if let Err(err) = config.ensure_exists() {
+                eprintln!("❌ {}", err);
+                std::process::exit(1);
+            }
+            if let Err(err) = add_current_repo_prompt(&config) {
                 eprintln!("❌ {}", err);
                 std::process::exit(1);
             }
@@ -393,4 +407,49 @@ fn find_binary_in_dir(root: &Path) -> Option<PathBuf> {
         }
     }
     None
+}
+
+fn add_current_repo_prompt(config: &Config) -> Result<(), String> {
+    let current_dir = env::current_dir()
+        .map_err(|e| format!("No se pudo obtener el directorio actual: {}", e))?;
+
+    let repo_path = current_dir
+        .to_str()
+        .ok_or_else(|| "La ruta del directorio actual no es UTF-8 válida.".to_string())?
+        .to_string();
+
+    if !current_dir.join(".git").exists() {
+        return Err(format!(
+            "El directorio actual no parece ser un repositorio Git: {}",
+            repo_path
+        ));
+    }
+
+    println!("📂 Directorio actual: {}", repo_path);
+    print!("¿Desea agregar este repositorio a git-sync? (y/N): ");
+    io::stdout()
+        .flush()
+        .map_err(|e| format!("No se pudo escribir en la salida: {}", e))?;
+
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .map_err(|e| format!("No se pudo leer la respuesta: {}", e))?;
+
+    let answer = input.trim().to_lowercase();
+    if answer != "y" && answer != "s" {
+        println!("ℹ️ Operación cancelada.");
+        return Ok(());
+    }
+
+    let mut repos = config.read_repos();
+    if repos.iter().any(|r| r.repo_path == repo_path) {
+        println!("ℹ️ El repositorio ya está registrado en {}", config.repos_file);
+        return Ok(());
+    }
+
+    repos.push(RepoDefinition::new(repo_path, Option::<String>::None));
+    config.write_repos(&repos)?;
+    println!("✅ Repositorio agregado correctamente en {}", config.repos_file);
+    Ok(())
 }
