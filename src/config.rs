@@ -1,6 +1,5 @@
 use crate::settings::Settings;
 use std::fs::{self, File};
-#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
@@ -69,35 +68,11 @@ pub struct Config {
 
 impl Config {
     pub fn new() -> Self {
-        #[cfg(unix)]
         let (config_dir, log_dir) = ("/etc/git-sync".to_string(), "/var/log/git-sync".to_string());
 
-        #[cfg(windows)]
-        let (config_dir, log_dir) = {
-            let program_data = std::env::var("ProgramData").unwrap_or_else(|_| "C:\\ProgramData".to_string());
-            (
-                format!("{}\\git-sync", program_data),
-                format!("{}\\git-sync\\logs", program_data),
-            )
-        };
-
-        let repos_file = if cfg!(windows) {
-            format!("{}\\repositories.txt", config_dir)
-        } else {
-            format!("{}/repositories.txt", config_dir)
-        };
-
-        let settings_file = if cfg!(windows) {
-            format!("{}\\config.toml", config_dir)
-        } else {
-            format!("{}/config.toml", config_dir)
-        };
-
-        let log_file = if cfg!(windows) {
-            format!("{}\\git-sync.log", log_dir)
-        } else {
-            format!("{}/git-sync.log", log_dir)
-        };
+        let repos_file = format!("{}/repositories.txt", config_dir);
+        let settings_file = format!("{}/config.toml", config_dir);
+        let log_file = format!("{}/git-sync.log", log_dir);
 
         Config {
             config_dir,
@@ -131,12 +106,9 @@ impl Config {
             fs::create_dir_all(path)
                 .map_err(|e| format!("❌ No se pudo crear el directorio {}: {}", path, e))?;
 
-            #[cfg(unix)]
-            {
-                let permissions = fs::Permissions::from_mode(_mode);
-                fs::set_permissions(path, permissions)
-                    .map_err(|e| format!("❌ No se pudieron asignar permisos a {}: {}", path, e))?;
-            }
+            let permissions = fs::Permissions::from_mode(_mode);
+            fs::set_permissions(path, permissions)
+                .map_err(|e| format!("❌ No se pudieron asignar permisos a {}: {}", path, e))?;
 
             println!("📁 Directorio creado: {}", path);
         }
@@ -159,16 +131,13 @@ impl Config {
                 )
             })?;
 
-            #[cfg(unix)]
-            {
-                let permissions = fs::Permissions::from_mode(0o644);
-                fs::set_permissions(&self.repos_file, permissions).map_err(|e| {
-                    format!(
-                        "❌ No se pudieron asignar permisos a {}: {}",
-                        self.repos_file, e
-                    )
-                })?;
-            }
+            let permissions = fs::Permissions::from_mode(0o644);
+            fs::set_permissions(&self.repos_file, permissions).map_err(|e| {
+                format!(
+                    "❌ No se pudieron asignar permisos a {}: {}",
+                    self.repos_file, e
+                )
+            })?;
 
             println!("🗂️ Archivo de repositorios creado: {}", self.repos_file);
             return Ok(true);
@@ -194,16 +163,13 @@ impl Config {
                 )
             })?;
 
-            #[cfg(unix)]
-            {
-                let permissions = fs::Permissions::from_mode(0o644);
-                fs::set_permissions(&self.settings_file, permissions).map_err(|e| {
-                    format!(
-                        "❌ No se pudieron asignar permisos a {}: {}",
-                        self.settings_file, e
-                    )
-                })?;
-            }
+            let permissions = fs::Permissions::from_mode(0o644);
+            fs::set_permissions(&self.settings_file, permissions).map_err(|e| {
+                format!(
+                    "❌ No se pudieron asignar permisos a {}: {}",
+                    self.settings_file, e
+                )
+            })?;
 
             println!("⚙️ Archivo de configuración creado: {}", self.settings_file);
         }
@@ -220,16 +186,13 @@ impl Config {
                 )
             })?;
 
-            #[cfg(unix)]
-            {
-                let permissions = fs::Permissions::from_mode(0o644);
-                fs::set_permissions(&self.log_file, permissions).map_err(|e| {
-                    format!(
-                        "❌ No se pudieron asignar permisos a {}: {}",
-                        self.log_file, e
-                    )
-                })?;
-            }
+            let permissions = fs::Permissions::from_mode(0o644);
+            fs::set_permissions(&self.log_file, permissions).map_err(|e| {
+                format!(
+                    "❌ No se pudieron asignar permisos a {}: {}",
+                    self.log_file, e
+                )
+            })?;
 
             println!("📝 Archivo de registro creado: {}", self.log_file);
         }
@@ -273,16 +236,13 @@ impl Config {
             )
         })?;
 
-        #[cfg(unix)]
-        {
-            let permissions = fs::Permissions::from_mode(0o644);
-            fs::set_permissions(&self.repos_file, permissions).map_err(|e| {
-                format!(
-                    "❌ No se pudieron asignar permisos a {}: {}",
-                    self.repos_file, e
-                )
-            })?;
-        }
+        let permissions = fs::Permissions::from_mode(0o644);
+        fs::set_permissions(&self.repos_file, permissions).map_err(|e| {
+            format!(
+                "❌ No se pudieron asignar permisos a {}: {}",
+                self.repos_file, e
+            )
+        })?;
 
         Ok(())
     }

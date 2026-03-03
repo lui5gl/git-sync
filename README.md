@@ -2,6 +2,8 @@
 
 Daemon ligero que mantiene múltiples repositorios Git al día y, cuando corresponde, compila y despliega automáticamente proyectos front-end. Nació para reemplazar pipelines de CI/CD en entornos con pocas herramientas disponibles: se instala como servicio `systemd`, vigila tus repositorios locales y ejecuta los pasos necesarios sin depender de servidores externos.
 
+> Soporte de plataforma: **solo Linux con systemd**.
+
 ---
 
 ## Características destacadas
