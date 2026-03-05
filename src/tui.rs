@@ -335,12 +335,8 @@ impl<'a> RepoManager<'a> {
         self.details_lines
             .push(format!("Repositorio: {}", repo_path));
         self.details_lines.push(format!(
-            "Sync: {}",
-            if repo_enabled {
-                "Activo"
-            } else {
-                "Desactivado"
-            }
+            "Sincronización: {}",
+            if repo_enabled { "Activa" } else { "Pausada" }
         ));
 
         let state = self.sync_state.get(&repo_path);
@@ -357,31 +353,33 @@ impl<'a> RepoManager<'a> {
             .map(|count| count.to_string())
             .unwrap_or_else(|| "-".to_string());
         self.details_lines
-            .push(format!("Commits pendientes (remote): {}", pending));
+            .push(format!("Commits pendientes (remoto): {}", pending));
 
         if let Some(ts) = refresh.and_then(|s| s.last_refresh_ts) {
             self.details_lines.push(format!(
-                "Último refresh remoto: hace {}",
+                "Última actualización remota: hace {}",
                 humanize_elapsed(Local::now().timestamp().saturating_sub(ts))
             ));
         } else {
             self.details_lines
-                .push("Último refresh remoto: sin datos".to_string());
+                .push("Última actualización remota: sin datos".to_string());
         }
 
         if let Some(refresh_error) = refresh.and_then(|s| s.last_error.clone()) {
             self.details_lines.push(format!(
-                "Error de refresh: {}",
+                "Error de actualización remota: {}",
                 truncate_message(&refresh_error, 120)
             ));
         }
 
         if let Some(last_pull) = state.and_then(|s| s.last_pulled_commit.clone()) {
-            self.details_lines
-                .push(format!("Último commit aplicado en pull: {}", last_pull));
+            self.details_lines.push(format!(
+                "Último commit aplicado en la actualización: {}",
+                last_pull
+            ));
         } else {
             self.details_lines
-                .push("Último commit aplicado en pull: sin datos".to_string());
+                .push("Último commit aplicado en la actualización: sin datos".to_string());
         }
 
         if let Some(last_error) = state.and_then(|s| s.last_error.clone()) {
@@ -443,7 +441,7 @@ impl<'a> RepoManager<'a> {
             self.input_mode = InputMode::EditingSource(index);
             self.input = repo.repo_path.clone();
             self.set_message(
-                "Edita la ruta local del repositorio seleccionado",
+                "Edite la ruta local del repositorio seleccionado",
                 Color::Cyan,
             );
         }
@@ -481,9 +479,9 @@ impl<'a> RepoManager<'a> {
         }
 
         let label = if enabled {
-            "Sync activado para el repositorio"
+            "Sincronización activada para el repositorio"
         } else {
-            "Sync desactivado para el repositorio"
+            "Sincronización pausada para el repositorio"
         };
         self.set_message(label, if enabled { Color::Green } else { Color::Yellow });
 
@@ -558,7 +556,7 @@ impl<'a> RepoManager<'a> {
                     self.refresh_details();
                 }
                 self.set_message(
-                    truncate_message(&format!("Falló sincronización: {}", err), 120),
+                    truncate_message(&format!("La sincronización falló: {}", err), 120),
                     Color::Red,
                 );
                 Ok(())
@@ -682,7 +680,7 @@ fn run_loop(
                         if let Some(path) = manager.selected_repo_path() {
                             open_shell_in_repo(terminal, &path)?;
                             manager.set_message(
-                                "Sesión de shell finalizada. Regresaste a git-sync.",
+                                "La sesión de terminal finalizó y se restauró la interfaz.",
                                 Color::Green,
                             );
                         } else {
@@ -725,7 +723,7 @@ fn open_shell_in_repo(
     let shell_result = std::process::Command::new(&shell)
         .current_dir(repo_path)
         .status()
-        .map_err(|e| format!("No se pudo abrir shell en {}: {}", repo_path, e));
+        .map_err(|e| format!("No se pudo abrir una terminal en {}: {}", repo_path, e));
 
     terminal
         .backend_mut()
@@ -735,7 +733,7 @@ fn open_shell_in_repo(
 
     match shell_result {
         Ok(status) if status.success() => Ok(()),
-        Ok(_) => Err("La sesión de shell terminó con error".to_string()),
+        Ok(_) => Err("La sesión de terminal finalizó con error".to_string()),
         Err(err) => Err(err),
     }
 }
@@ -779,7 +777,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         Span::raw("  |  "),
         Span::styled(
             format!(
-                "Refresh auto secuencial ~{:.1}s/repo | Pull: u/U",
+                "Actualización remota secuencial ~{:.1}s/repositorio | Actualizar código: u/U",
                 manager.refresh_step_interval.as_millis() as f64 / 1000.0
             ),
             Style::default().fg(Color::Green),
@@ -790,7 +788,11 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
             Style::default().fg(Color::White),
         ),
     ]))
-    .block(Block::default().borders(Borders::ALL).title("Dashboard"));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Panel Principal"),
+    );
     frame.render_widget(header, chunks[0]);
 
     let body_chunks = Layout::default()
@@ -819,7 +821,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                         Style::default().fg(Color::Black).bg(Color::Yellow),
                     ),
                     (true, Some(remote), _) if remote.last_error.is_some() => (
-                        " ERROR REFRESH ",
+                        " ERROR REMOTO ",
                         Style::default().fg(Color::White).bg(Color::Red),
                     ),
                     (true, Some(remote), _) if remote.commits_behind.unwrap_or(0) > 0 => (
@@ -834,7 +836,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                         Style::default().fg(Color::Black).bg(Color::Green),
                     ),
                     _ => (
-                        " SIN REFRESH ",
+                        " SIN ESTADO ",
                         Style::default().fg(Color::Black).bg(Color::DarkGray),
                     ),
                 };
@@ -855,12 +857,12 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                         format!("{:>2}. ", i + 1),
                         Style::default().fg(Color::DarkGray),
                     ),
-                    Span::styled("SYNC ", Style::default().fg(Color::Black).bg(Color::Blue)),
+                    Span::styled("REPO ", Style::default().fg(Color::Black).bg(Color::Blue)),
                     Span::styled(format!(" {}", repo.repo_path), base_style),
                     Span::raw("  | "),
                     Span::styled(status_label, status_style),
                     Span::raw(format!(
-                        "  |  Rama: {}  |  Behind: {}  |  Últ. sync: {}",
+                        "  |  Rama: {}  |  Pendientes: {}  |  Últ. sincronización: {}",
                         branch_label, behind_label, last_sync_label
                     )),
                 ]);
@@ -897,11 +899,11 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         .map(|ts| format!("hace {}", humanize_elapsed(now_ts.saturating_sub(ts))))
         .unwrap_or_else(|| "sin intentos".to_string());
     let selected_status = match (selected_refresh, selected_state) {
-        (Some(remote), _) if remote.last_error.is_some() => "Error en refresh remoto",
+        (Some(remote), _) if remote.last_error.is_some() => "Error en actualización remota",
         (Some(remote), _) if remote.commits_behind.unwrap_or(0) > 0 => "Desactualizado",
         (_, Some(state)) if repo_has_active_error(state) => "Error en último intento",
         (Some(_), Some(_)) | (Some(_), None) => "Correcto",
-        _ => "Sin refresh",
+        _ => "Sin estado remoto",
     };
     let selected_error = selected_state
         .and_then(|state| state.last_error.clone())
@@ -955,10 +957,10 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                 .add_modifier(Modifier::BOLD),
         )]),
         Line::from(format!(
-            "Refresh auto secuencial: ~{:.1}s/repo",
+            "Actualización remota secuencial: ~{:.1}s/repositorio",
             manager.refresh_step_interval.as_millis() as f64 / 1000.0
         )),
-        Line::from("Acción rápida: u/U"),
+        Line::from("Acción rápida: u/U (actualizar código)"),
         Line::from(format!("Fecha: {}", Local::now().format("%Y-%m-%d"))),
         Line::from(""),
         Line::from(vec![Span::styled(
@@ -969,20 +971,32 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         )]),
         Line::from(format!("Rama: {}", selected_branch)),
         Line::from(format!(
-            "Sync: {}",
+            "Sincronización: {}",
             if selected_repo_enabled {
-                "Activo"
+                "Activa"
             } else {
-                "Desactivado"
+                "Pausada"
             }
         )),
-        Line::from(format!("Commits behind: {}", selected_behind)),
-        Line::from(format!("Último refresh: {}", selected_refresh_at)),
-        Line::from(format!("Error refresh: {}", selected_refresh_error)),
+        Line::from(format!("Commits pendientes: {}", selected_behind)),
+        Line::from(format!(
+            "Última actualización remota: {}",
+            selected_refresh_at
+        )),
+        Line::from(format!(
+            "Error de actualización remota: {}",
+            selected_refresh_error
+        )),
         Line::from(format!("Estado: {}", selected_status)),
         Line::from(format!("Último resultado: {}", selected_result)),
-        Line::from(format!("Último commit pull: {}", selected_pulled_commit)),
-        Line::from(format!("Último sync OK: {}", selected_last_sync)),
+        Line::from(format!(
+            "Último commit aplicado en actualización: {}",
+            selected_pulled_commit
+        )),
+        Line::from(format!(
+            "Última sincronización exitosa: {}",
+            selected_last_sync
+        )),
         Line::from(format!("Último intento: {}", selected_last_attempt)),
         Line::from(format!("Último error: {}", selected_error)),
     ];
@@ -1035,7 +1049,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
     }
 
     let (status_text, status_color) = manager.message.clone().unwrap_or((
-        "Listo para editar repositorios".to_string(),
+        "Listo para gestionar repositorios".to_string(),
         Color::DarkGray,
     ));
     let status = Paragraph::new(status_text)
@@ -1083,7 +1097,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                 .bg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::raw(" visitar ruta  "),
+        Span::raw(" abrir terminal  "),
         Span::styled(
             " S ",
             Style::default()

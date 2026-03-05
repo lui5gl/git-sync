@@ -121,6 +121,7 @@ Useful test workflow when adding new coverage:
 - Follow existing log style:
   - user-friendly Spanish messages
   - emoji severity markers (`✅`, `⚠️`, `❌`, `🚀`)
+- Use professional, neutral Spanish for user-facing text; avoid slang and unnecessary Anglicisms.
 - For daemon/service flows, prefer logging to both console and file via `Logger`.
 - Keep logs concise but include enough context to diagnose failures.
 
@@ -141,6 +142,7 @@ Useful test workflow when adding new coverage:
 - Keep interaction states explicit via enums and small transition methods.
 - On input flows, support clear cancel/submit behavior (`Esc`, `Enter`).
 - Keep UI text consistent with current Spanish UX language.
+- Prefer formal wording in labels, shortcuts, and status messages.
 
 ### Architecture And Organization
 
