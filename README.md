@@ -94,10 +94,11 @@ Puedes editar el archivo a mano o usar la TUI (`sudo git-sync`) para que el form
 
 Ejecuta `sudo git-sync` (sin argumentos) para abrir la consola interactiva:
 
-- `↑/↓` navegar, `Enter` o `e` editar, `a` añadir, `d` eliminar, `q/Esc` salir.
+- `↑/↓` navegar, `Enter` o `e` editar, `a` añadir, `d` eliminar, `Espacio` ver detalles, `q/Esc` salir.
 - Al añadir un repositorio:
   1. Ingresas la ruta absoluta al directorio del repositorio **ya clonado** (no la URL remota).
 - Los mensajes de estado aparecen en la parte inferior con colores y emojis.
+- La vista de detalles muestra rama detectada, último commit aplicado por pull, último error y últimos commits locales.
 
 ---
 

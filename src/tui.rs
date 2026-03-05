@@ -1,4 +1,5 @@
 use crate::config::{Config, RepoDefinition};
+use crate::git::GitRepo;
 use crate::sync_state::{RepoSyncState, SyncStateSnapshot};
 use chrono::Local;
 use crossterm::ExecutableCommand;
@@ -14,6 +15,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use std::io::{Stdout, stdout};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 #[derive(Clone)]
@@ -59,6 +61,9 @@ struct RepoManager<'a> {
     sync_interval: u64,
     next_sync_deadline: Instant,
     sync_state: SyncStateSnapshot,
+    details_open: bool,
+    details_lines: Vec<String>,
+    details_repo_path: Option<String>,
 }
 
 impl<'a> RepoManager<'a> {
@@ -81,6 +86,11 @@ impl<'a> RepoManager<'a> {
             sync_interval: safe_interval,
             next_sync_deadline: Instant::now() + Duration::from_secs(safe_interval),
             sync_state: SyncStateSnapshot::load(&config.state_file),
+            details_open: false,
+            details_lines: vec![
+                "Pulse Espacio para ver detalles del repositorio seleccionado.".to_string(),
+            ],
+            details_repo_path: None,
         }
     }
 
@@ -90,6 +100,13 @@ impl<'a> RepoManager<'a> {
             self.next_sync_deadline += Duration::from_secs(self.sync_interval);
         }
         self.sync_state = SyncStateSnapshot::load(&self.config.state_file);
+
+        if self.details_open {
+            let selected_path = self.selected_repo().map(|repo| repo.repo_path.clone());
+            if selected_path != self.details_repo_path {
+                self.refresh_details();
+            }
+        }
     }
 
     fn seconds_until_next_sync(&self) -> u64 {
@@ -126,6 +143,9 @@ impl<'a> RepoManager<'a> {
         };
         if !self.repos.is_empty() {
             self.list_state.select(Some(next_index));
+            if self.details_open {
+                self.refresh_details();
+            }
         }
     }
 
@@ -136,6 +156,94 @@ impl<'a> RepoManager<'a> {
         };
         if !self.repos.is_empty() {
             self.list_state.select(Some(prev_index));
+            if self.details_open {
+                self.refresh_details();
+            }
+        }
+    }
+
+    fn toggle_details(&mut self) {
+        self.details_open = !self.details_open;
+        if self.details_open {
+            self.refresh_details();
+            self.set_message(
+                "Vista detallada activada (últimos commits y errores)",
+                Color::Cyan,
+            );
+        } else {
+            self.set_message("Vista detallada oculta", Color::DarkGray);
+        }
+    }
+
+    fn refresh_details(&mut self) {
+        self.details_lines.clear();
+
+        let Some(repo_path) = self.selected_repo().map(|repo| repo.repo_path.clone()) else {
+            self.details_repo_path = None;
+            self.details_lines
+                .push("No hay repositorio seleccionado.".to_string());
+            return;
+        };
+
+        self.details_repo_path = Some(repo_path.clone());
+        self.details_lines
+            .push(format!("Repositorio: {}", repo_path));
+
+        let state = self.sync_state.get(&repo_path);
+        let branch = state
+            .and_then(|s| s.last_branch.clone())
+            .unwrap_or_else(|| "-".to_string());
+        self.details_lines
+            .push(format!("Rama detectada: {}", branch));
+
+        if let Some(last_pull) = state.and_then(|s| s.last_pulled_commit.clone()) {
+            self.details_lines
+                .push(format!("Último commit aplicado en pull: {}", last_pull));
+        } else {
+            self.details_lines
+                .push("Último commit aplicado en pull: sin datos".to_string());
+        }
+
+        if let Some(last_error) = state.and_then(|s| s.last_error.clone()) {
+            self.details_lines
+                .push("Último error detallado:".to_string());
+            for line in wrap_text(&last_error, 120, 3) {
+                self.details_lines.push(format!("  {}", line));
+            }
+        } else {
+            self.details_lines
+                .push("Último error detallado: sin errores registrados".to_string());
+        }
+
+        if !Path::new(&repo_path).exists() {
+            self.details_lines
+                .push("No se puede leer commits: la ruta no existe".to_string());
+            return;
+        }
+
+        if !Path::new(&format!("{}/.git", repo_path)).exists() {
+            self.details_lines
+                .push("No se puede leer commits: no es un repositorio Git válido".to_string());
+            return;
+        }
+
+        let git_repo = GitRepo::new(repo_path);
+        match git_repo.recent_commits(5) {
+            Ok(commits) if commits.is_empty() => {
+                self.details_lines
+                    .push("Últimos commits: sin historial".to_string());
+            }
+            Ok(commits) => {
+                self.details_lines
+                    .push("Últimos commits locales:".to_string());
+                for commit in commits {
+                    self.details_lines.push(format!("  - {}", commit));
+                }
+            }
+            Err(err) => {
+                self.details_lines
+                    .push(format!("No se pudieron leer commits: {}", err));
+            }
         }
     }
 
@@ -283,6 +391,7 @@ fn run_loop(
                     KeyCode::Char('a') => manager.start_add(),
                     KeyCode::Char('e') | KeyCode::Enter => manager.start_edit(),
                     KeyCode::Char('d') => manager.delete_selected()?,
+                    KeyCode::Char(' ') => manager.toggle_details(),
                     KeyCode::Down => manager.select_next(),
                     KeyCode::Up => manager.select_previous(),
                     _ => {}
@@ -308,6 +417,11 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
             [
                 Constraint::Length(3),
                 Constraint::Min(8),
+                if manager.details_open {
+                    Constraint::Length(10)
+                } else {
+                    Constraint::Length(3)
+                },
                 Constraint::Length(3),
                 Constraint::Length(3),
                 Constraint::Length(3),
@@ -442,6 +556,10 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
     let selected_branch = selected_state
         .and_then(|state| state.last_branch.clone())
         .unwrap_or_else(|| "-".to_string());
+    let selected_pulled_commit = selected_state
+        .and_then(|state| state.last_pulled_commit.clone())
+        .map(|commit| truncate_message(&commit, 72))
+        .unwrap_or_else(|| "-".to_string());
 
     let panel_lines = vec![
         Line::from(vec![Span::styled(
@@ -472,6 +590,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         Line::from(format!("Rama: {}", selected_branch)),
         Line::from(format!("Estado: {}", selected_status)),
         Line::from(format!("Último resultado: {}", selected_result)),
+        Line::from(format!("Último commit pull: {}", selected_pulled_commit)),
         Line::from(format!("Último sync OK: {}", selected_last_sync)),
         Line::from(format!("Último intento: {}", selected_last_attempt)),
         Line::from(format!("Último error: {}", selected_error)),
@@ -480,6 +599,26 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         .style(Style::default().fg(Color::White))
         .block(Block::default().borders(Borders::ALL).title("Estado"));
     frame.render_widget(panel, body_chunks[1]);
+
+    let details_lines: Vec<Line> = if manager.details_open {
+        manager
+            .details_lines
+            .iter()
+            .map(|line| Line::from(line.clone()))
+            .collect()
+    } else {
+        vec![Line::from(
+            "Pulse Espacio para ver detalles del repositorio seleccionado",
+        )]
+    };
+    let details = Paragraph::new(details_lines)
+        .style(Style::default().fg(Color::White))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Detalles (Espacio)"),
+        );
+    frame.render_widget(details, chunks[2]);
 
     let (input_text, input_title) = match manager.input_mode {
         InputMode::Normal => ("".to_string(), "Entrada"),
@@ -492,15 +631,15 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
     let input_block = Paragraph::new(input_text)
         .style(Style::default().fg(Color::White))
         .block(Block::default().borders(Borders::ALL).title(input_title));
-    frame.render_widget(input_block, chunks[2]);
+    frame.render_widget(input_block, chunks[3]);
 
     if matches!(
         manager.input_mode,
         InputMode::AddingSource | InputMode::EditingSource(_)
     ) {
         frame.set_cursor(
-            chunks[2].x + manager.input.len() as u16 + 1,
-            chunks[2].y + 1,
+            chunks[3].x + manager.input.len() as u16 + 1,
+            chunks[3].y + 1,
         );
     }
 
@@ -511,7 +650,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
     let status = Paragraph::new(status_text)
         .style(Style::default().fg(status_color))
         .block(Block::default().borders(Borders::ALL).title("Estado"));
-    frame.render_widget(status, chunks[3]);
+    frame.render_widget(status, chunks[4]);
 
     let shortcuts = Paragraph::new(Line::from(vec![
         Span::styled(
@@ -547,6 +686,14 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         ),
         Span::raw(" eliminar  "),
         Span::styled(
+            " Espacio ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" detalles  "),
+        Span::styled(
             " Esc ",
             Style::default()
                 .fg(Color::Black)
@@ -573,7 +720,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
     ]))
     .style(Style::default().fg(Color::White))
     .block(Block::default().borders(Borders::ALL).title("Atajos"));
-    frame.render_widget(shortcuts, chunks[4]);
+    frame.render_widget(shortcuts, chunks[5]);
 }
 
 fn repo_has_active_error(state: &RepoSyncState) -> bool {
@@ -616,6 +763,57 @@ fn truncate_message(message: &str, max_chars: usize) -> String {
             return out;
         }
         out.push(ch);
+    }
+
+    out
+}
+
+fn wrap_text(message: &str, max_chars: usize, max_lines: usize) -> Vec<String> {
+    if max_chars == 0 || max_lines == 0 {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    let mut current = String::new();
+
+    for word in message.split_whitespace() {
+        let projected_len = if current.is_empty() {
+            word.chars().count()
+        } else {
+            current.chars().count() + 1 + word.chars().count()
+        };
+
+        if projected_len > max_chars {
+            if !current.is_empty() {
+                out.push(current);
+                current = String::new();
+                if out.len() >= max_lines {
+                    break;
+                }
+            }
+
+            if word.chars().count() > max_chars {
+                out.push(truncate_message(word, max_chars));
+                if out.len() >= max_lines {
+                    break;
+                }
+            } else {
+                current.push_str(word);
+            }
+        } else {
+            if !current.is_empty() {
+                current.push(' ');
+            }
+            current.push_str(word);
+        }
+    }
+
+    if out.len() < max_lines && !current.is_empty() {
+        out.push(current);
+    }
+
+    if out.len() > max_lines {
+        out.truncate(max_lines);
     }
 
     out

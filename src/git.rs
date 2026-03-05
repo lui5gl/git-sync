@@ -27,7 +27,7 @@ impl GitRepo {
         // Intentar detectar la rama predeterminada
         let branch_output = Command::new("git")
             .current_dir(&self.path)
-            .args(&["symbolic-ref", "refs/remotes/origin/HEAD"])
+            .args(["symbolic-ref", "refs/remotes/origin/HEAD"])
             .output();
 
         if let Ok(output) = branch_output {
@@ -43,7 +43,7 @@ impl GitRepo {
         // Alternativa: verificar qué rama está disponible
         let main_exists = Command::new("git")
             .current_dir(&self.path)
-            .args(&["rev-parse", "--verify", "origin/main"])
+            .args(["rev-parse", "--verify", "origin/main"])
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false);
@@ -58,7 +58,7 @@ impl GitRepo {
     pub fn count_commits_behind(&self, branch: &str) -> Result<usize, String> {
         let output = Command::new("git")
             .current_dir(&self.path)
-            .args(&["rev-list", "--count", &format!("HEAD..origin/{}", branch)])
+            .args(["rev-list", "--count", &format!("HEAD..origin/{}", branch)])
             .output()
             .map_err(|e| format!("❌ No se pudo comprobar el estado de Git: {}", e))?;
 
@@ -73,7 +73,7 @@ impl GitRepo {
     pub fn pull(&self, branch: &str) -> Result<String, String> {
         let output = Command::new("git")
             .current_dir(&self.path)
-            .args(&["pull", "origin", branch])
+            .args(["pull", "origin", branch])
             .output()
             .map_err(|e| format!("❌ No se pudo ejecutar `git pull`: {}", e))?;
 
@@ -82,5 +82,44 @@ impl GitRepo {
         } else {
             Err(String::from_utf8_lossy(&output.stderr).to_string())
         }
+    }
+
+    pub fn head_commit_summary(&self) -> Result<String, String> {
+        let output = Command::new("git")
+            .current_dir(&self.path)
+            .args(["log", "-1", "--pretty=format:%h %s"])
+            .output()
+            .map_err(|e| format!("❌ No se pudo ejecutar `git log`: {}", e))?;
+
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    pub fn recent_commits(&self, limit: usize) -> Result<Vec<String>, String> {
+        let output = Command::new("git")
+            .current_dir(&self.path)
+            .args([
+                "log",
+                "--pretty=format:%h | %cr | %s",
+                "-n",
+                &limit.to_string(),
+            ])
+            .output()
+            .map_err(|e| format!("❌ No se pudo ejecutar `git log`: {}", e))?;
+
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        }
+
+        let content = String::from_utf8_lossy(&output.stdout);
+        let commits = content
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>();
+        Ok(commits)
     }
 }

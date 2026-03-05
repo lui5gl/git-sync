@@ -11,6 +11,7 @@ pub struct RepoSyncState {
     pub last_error_ts: Option<i64>,
     pub last_error: Option<String>,
     pub last_result: Option<String>,
+    pub last_pulled_commit: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -48,12 +49,19 @@ impl SyncStateSnapshot {
         repo.last_attempt_ts = Some(now);
     }
 
-    pub fn mark_success(&mut self, repo_path: &str, branch: String, result: String) {
+    pub fn mark_success(
+        &mut self,
+        repo_path: &str,
+        branch: String,
+        result: String,
+        last_pulled_commit: Option<String>,
+    ) {
         let now = Utc::now().timestamp();
         let repo = self.upsert_repo_mut(repo_path);
         repo.last_branch = Some(branch);
         repo.last_success_ts = Some(now);
         repo.last_result = Some(result);
+        repo.last_pulled_commit = last_pulled_commit;
         repo.last_error = None;
     }
 
