@@ -2,8 +2,7 @@ use crate::config::RepoDefinition;
 use crate::git::GitRepo;
 use crate::logger::Logger;
 use crate::sync_state::SyncStateSnapshot;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub struct RepoProcessor<'a> {
     logger: &'a Logger,
@@ -92,29 +91,14 @@ impl<'a> RepoProcessor<'a> {
         if self.verbose {
             self.logger
                 .log_line("==========================================");
-            match &repo.deploy_target {
-                Some(target) => self.logger.log_line(&format!(
-                    "🛠️ Procesando repositorio con build: {} -> {}",
-                    repo.repo_path, target
-                )),
-                None => self
-                    .logger
-                    .log_line(&format!("🔄 Procesando repositorio: {}", repo.repo_path)),
-            }
+            self.logger
+                .log_line(&format!("🔄 Procesando repositorio: {}", repo.repo_path));
             self.logger
                 .log_line("==========================================");
         }
 
         self.validate_repo(&repo.repo_path)?;
-
-        let sync_result = self.check_and_pull(&repo.repo_path)?;
-
-        if let Some(target) = &repo.deploy_target {
-            self.build_and_deploy(&repo.repo_path, target)?;
-            return Ok(format!("{} + build/deploy correcto", sync_result));
-        }
-
-        Ok(sync_result)
+        self.check_and_pull(&repo.repo_path)
     }
 
     fn validate_repo(&self, repo_path: &str) -> Result<(), String> {
@@ -144,21 +128,18 @@ impl<'a> RepoProcessor<'a> {
                 .log_line("🔍 Verificando el estado del remoto...");
         }
 
-        // Obtener cambios del remoto
         if let Err(e) = repo.fetch() {
             let msg = format!("❌ No se pudo ejecutar `git fetch`: {}", e);
             self.logger.log_error(&msg);
             return Err(msg);
         }
 
-        // Determinar la rama predeterminada
         let branch = repo.get_default_branch();
         if self.verbose {
             self.logger
                 .log_line(&format!("Se utilizará la rama: {}", branch));
         }
 
-        // Revisar si el repositorio local está desfasado
         match repo.count_commits_behind(&branch) {
             Ok(0) => {
                 if self.verbose {
@@ -197,222 +178,6 @@ impl<'a> RepoProcessor<'a> {
                 self.logger.log_error(&msg);
                 Err(msg)
             }
-        }
-    }
-
-    fn build_and_deploy(&self, repo_path: &str, destination: &str) -> Result<(), String> {
-        self.run_build(repo_path)?;
-
-        let dist_path = Path::new(repo_path).join("dist");
-        if !dist_path.exists() {
-            return Err(format!(
-                "❗ No se encontró el directorio de salida en {}",
-                dist_path.display()
-            ));
-        }
-
-        let destination_path = PathBuf::from(destination);
-        if destination_path.exists() {
-            fs::remove_dir_all(&destination_path).map_err(|e| {
-                format!(
-                    "❌ No se pudo limpiar el destino {}: {}",
-                    destination_path.display(),
-                    e
-                )
-            })?;
-        }
-
-        fs::create_dir_all(&destination_path).map_err(|e| {
-            format!(
-                "❌ No se pudo crear el directorio destino {}: {}",
-                destination_path.display(),
-                e
-            )
-        })?;
-
-        self.copy_recursive(&dist_path, &destination_path)?;
-
-        if self.verbose {
-            self.logger.log_line(&format!(
-                "🚀 Archivos desplegados en {}",
-                destination_path.display()
-            ));
-        }
-
-        Ok(())
-    }
-
-    fn copy_recursive(&self, source: &Path, destination: &Path) -> Result<(), String> {
-        if source.is_dir() {
-            for entry in fs::read_dir(source).map_err(|e| {
-                format!(
-                    "❌ No se pudo leer el directorio {}: {}",
-                    source.display(),
-                    e
-                )
-            })? {
-                let entry = entry.map_err(|e| {
-                    format!(
-                        "❌ No se pudo procesar una entrada en {}: {}",
-                        source.display(),
-                        e
-                    )
-                })?;
-                let file_type = entry.file_type().map_err(|e| {
-                    format!(
-                        "❌ No se pudo determinar el tipo de {:?}: {}",
-                        entry.path(),
-                        e
-                    )
-                })?;
-
-                let dest_path = destination.join(entry.file_name());
-                if file_type.is_dir() {
-                    fs::create_dir_all(&dest_path).map_err(|e| {
-                        format!(
-                            "❌ No se pudo crear el directorio {}: {}",
-                            dest_path.display(),
-                            e
-                        )
-                    })?;
-                    self.copy_recursive(&entry.path(), &dest_path)?;
-                } else if file_type.is_file() {
-                    fs::copy(entry.path(), &dest_path).map_err(|e| {
-                        format!(
-                            "❌ No se pudo copiar {} a {}: {}",
-                            entry.path().display(),
-                            dest_path.display(),
-                            e
-                        )
-                    })?;
-                } else if file_type.is_symlink() {
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs as unix_fs;
-                        let target = fs::read_link(entry.path()).map_err(|e| {
-                            format!(
-                                "❌ No se pudo leer el enlace simbólico {}: {}",
-                                entry.path().display(),
-                                e
-                            )
-                        })?;
-                        unix_fs::symlink(target, &dest_path).map_err(|e| {
-                            format!(
-                                "❌ No se pudo recrear el enlace simbólico {}: {}",
-                                dest_path.display(),
-                                e
-                            )
-                        })?;
-                    }
-
-                    #[cfg(not(unix))]
-                    {
-                        return Err(format!(
-                            "❌ Los enlaces simbólicos no son compatibles en este sistema: {}",
-                            entry.path().display()
-                        ));
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn run_build(&self, repo_path: &str) -> Result<(), String> {
-        let manager = self.detect_package_manager(Path::new(repo_path));
-        if self.verbose {
-            self.logger.log_line(&format!(
-                "🧰 Ejecutando build con {}...",
-                manager.display_name()
-            ));
-        }
-
-        let mut command = manager.build_command();
-        let args = manager.build_args();
-        command.current_dir(repo_path).args(args);
-
-        let status = command.status().map_err(|e| {
-            format!(
-                "❌ No se pudo ejecutar `{}`: {}",
-                manager.command_preview(),
-                e
-            )
-        })?;
-
-        if status.success() {
-            Ok(())
-        } else {
-            Err(format!(
-                "❌ `{}` finalizó con estado {}",
-                manager.command_preview(),
-                status.code().unwrap_or(-1)
-            ))
-        }
-    }
-
-    fn detect_package_manager(&self, repo_path: &Path) -> PackageManager {
-        let bun_lock = repo_path.join("bun.lockb");
-        let bunfig = repo_path.join("bunfig.toml");
-        if bun_lock.exists() || bunfig.exists() {
-            return PackageManager::Bun;
-        }
-
-        let pnpm_lock = repo_path.join("pnpm-lock.yaml");
-        if pnpm_lock.exists() {
-            return PackageManager::Pnpm;
-        }
-
-        let yarn_lock = repo_path.join("yarn.lock");
-        if yarn_lock.exists() {
-            return PackageManager::Yarn;
-        }
-
-        PackageManager::Npm
-    }
-}
-
-enum PackageManager {
-    Bun,
-    Pnpm,
-    Yarn,
-    Npm,
-}
-
-impl PackageManager {
-    fn build_command(&self) -> std::process::Command {
-        match self {
-            PackageManager::Bun => std::process::Command::new("bun"),
-            PackageManager::Pnpm => std::process::Command::new("pnpm"),
-            PackageManager::Yarn => std::process::Command::new("yarn"),
-            PackageManager::Npm => std::process::Command::new("npm"),
-        }
-    }
-
-    fn build_args(&self) -> Vec<&'static str> {
-        match self {
-            PackageManager::Bun => vec!["run", "build"],
-            PackageManager::Pnpm => vec!["run", "build"],
-            PackageManager::Yarn => vec!["build"],
-            PackageManager::Npm => vec!["run", "build"],
-        }
-    }
-
-    fn display_name(&self) -> &'static str {
-        match self {
-            PackageManager::Bun => "bun",
-            PackageManager::Pnpm => "pnpm",
-            PackageManager::Yarn => "yarn",
-            PackageManager::Npm => "npm",
-        }
-    }
-
-    fn command_preview(&self) -> &'static str {
-        match self {
-            PackageManager::Bun => "bun run build",
-            PackageManager::Pnpm => "pnpm run build",
-            PackageManager::Yarn => "yarn build",
-            PackageManager::Npm => "npm run build",
         }
     }
 }

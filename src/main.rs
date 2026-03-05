@@ -62,7 +62,7 @@ fn print_help() {
 
 🛠️ Recuerde
     • Utilice rutas locales del servidor (no URLs remotas).
-    • Proyectos con compilación: fuente en /root/proyects y despliegue en /var/www/html/...
+    • El daemon solo sincroniza repositorios Git locales.
   • Revise los permisos de archivos si ejecuta como otro usuario.
 "#,
         version = VERSION
@@ -464,7 +464,7 @@ fn add_current_repo_prompt(config: &Config) -> Result<(), String> {
         return Ok(());
     }
 
-    repos.push(RepoDefinition::new(repo_path, Option::<String>::None));
+    repos.push(RepoDefinition::new(repo_path));
     config.write_repos(&repos)?;
     println!(
         "✅ Repositorio agregado correctamente en {}",

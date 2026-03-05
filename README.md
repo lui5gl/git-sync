@@ -1,6 +1,6 @@
 # Git Sync
 
-Daemon ligero que mantiene múltiples repositorios Git al día y, cuando corresponde, compila y despliega automáticamente proyectos front-end. Nació para reemplazar pipelines de CI/CD en entornos con pocas herramientas disponibles: se instala como servicio `systemd`, vigila tus repositorios locales y ejecuta los pasos necesarios sin depender de servidores externos.
+Daemon ligero que mantiene múltiples repositorios Git al día. Nació para reemplazar pipelines de CI/CD en entornos con pocas herramientas disponibles: se instala como servicio `systemd`, vigila tus repositorios locales y ejecuta sincronizaciones sin depender de servidores externos.
 
 > Soporte de plataforma: **solo Linux con systemd**.
 
@@ -9,8 +9,7 @@ Daemon ligero que mantiene múltiples repositorios Git al día y, cuando corresp
 ## Características destacadas
 
 - 🔁 **Sincronización automática** de cualquier número de repositorios Git locales desde su `origin`.
-- 🛠️ **Modo build opcional**: tras actualizar el código ejecuta `bun`, `pnpm`, `yarn` o `npm` (en ese orden de prioridad) con `run build` y copia el contenido de `dist/` al destino que definas.
-- ✅ **Flujo único de producción**: no existe modo `Development`; el daemon sincroniza y despliega usando rutas locales configuradas.
+- ✅ **Flujo único de producción**: no existe modo `Development`; el daemon sincroniza repositorios usando rutas locales configuradas.
 - 🧭 **Detección de rama**: usa la rama remota declarada como HEAD (`origin/main`, `origin/master`, etc.); si no existe, intenta con `main` y luego con `master`.
 - 🖥️ **Interfaz TUI** (terminal) para añadir, editar o eliminar repositorios sin tocar archivos manualmente.
 - 🪵 **Logging persistente** en `/var/log/git-sync/git-sync.log` con marcas de tiempo y mensajes claros (emojis incluidos).
@@ -58,10 +57,11 @@ La primera ejecución instala el servicio `systemd`, crea los directorios necesa
 ```
 /etc/git-sync/
 ├── config.toml        # Ajustes generales
-└── repositories.txt   # Repos sincronizados y opcionales despliegues
+└── repositories.txt   # Repositorios sincronizados
 
 /var/log/git-sync/
-└── git-sync.log       # Registro persistente del daemon
+├── git-sync.log       # Registro persistente del daemon
+└── state.toml         # Estado de último intento/éxito/error por repositorio
 ```
 
 ### `config.toml`
@@ -80,18 +80,11 @@ continuous_mode = true      # Ciclos infinitos (false = una sola pasada)
 Formato soportado:
 
 ```
-# Solo sincronización
 /home/deploy/repos/mi-api
-
-# Sincronización + build + despliegue
-/home/deploy/repos/mi-app-vue => /var/www/html/mi-app
 ```
 
-- La ruta antes de `=>` debe ser la ruta absoluta a un repositorio Git válido ya clonado en el servidor.
-- La ruta después de `=>` es opcional. Cuando existe:
-  1. Se ejecuta `git fetch`/`git pull` como siempre.
-  2. Se ejecuta `bun|pnpm|yarn|npm run build` (prioridad según lockfile presente).
-  3. El contenido de `dist/` reemplaza la carpeta destino indicando (`rm -rf` y copia recursiva).
+- Cada línea debe contener la ruta absoluta a un repositorio Git válido ya clonado en el servidor.
+- Entradas con formato antiguo `origen => destino` se leen, pero el destino se ignora.
 
 Puedes editar el archivo a mano o usar la TUI (`sudo git-sync`) para que el formato se mantenga sin errores.
 
@@ -104,8 +97,6 @@ Ejecuta `sudo git-sync` (sin argumentos) para abrir la consola interactiva:
 - `↑/↓` navegar, `Enter` o `e` editar, `a` añadir, `d` eliminar, `q/Esc` salir.
 - Al añadir un repositorio:
   1. Ingresas la ruta absoluta al directorio del repositorio **ya clonado** (no la URL remota).
-  2. Elegís si requiere build (`1` = no, `2` = sí).
-  3. Si elegiste build, se solicita la ruta de despliegue (vacía = lo convierte en repo simple).
 - Los mensajes de estado aparecen en la parte inferior con colores y emojis.
 
 ---
@@ -148,11 +139,7 @@ git-sync --add-current             # Pregunta si agrega el directorio actual
    - `git fetch`
    - Contar commits pendientes (`rev-list HEAD..origin/<branch>`)
    - Si hay diferencias, `git pull origin <branch>`
-3. **Build + despliegue (opcional)**:
-   - Detectar gestor: `bun.lockb`/`bunfig.toml` → `bun`; `pnpm-lock.yaml` → `pnpm`; `yarn.lock` → `yarn`; en otro caso `npm`.
-   - Ejecutar `run build`.
-   - Limpiar destino y copiar `dist/`.
-4. **Registro**: todas las acciones se anotan en `/var/log/git-sync/git-sync.log` con hora y emojis para ubicar fácilmente éxitos (`✅`), despliegues (`🚀`), advertencias (`⚠️`) y fallos (`❌`).
+3. **Registro**: todas las acciones se anotan en `/var/log/git-sync/git-sync.log` con hora y emojis para ubicar fácilmente éxitos (`✅`), advertencias (`⚠️`) y fallos (`❌`).
 
 ---
 

@@ -19,11 +19,8 @@ use std::time::{Duration, Instant};
 #[derive(Clone)]
 enum InputMode {
     Normal,
-    ChoosingBuildType,
-    AddingSource { requires_build: bool },
-    AddingDestination { source: String },
+    AddingSource,
     EditingSource(usize),
-    EditingDestination { index: usize, source: String },
 }
 
 pub fn run_repo_manager(config: &Config, sync_interval: u64) -> Result<(), String> {
@@ -101,17 +98,6 @@ impl<'a> RepoManager<'a> {
             .as_secs()
     }
 
-    fn build_count(&self) -> usize {
-        self.repos
-            .iter()
-            .filter(|repo| {
-                repo.deploy_target
-                    .as_ref()
-                    .is_some_and(|target| !target.is_empty())
-            })
-            .count()
-    }
-
     fn selected_repo(&self) -> Option<&RepoDefinition> {
         let selected = self.list_state.selected()?;
         self.repos.get(selected)
@@ -154,39 +140,39 @@ impl<'a> RepoManager<'a> {
     }
 
     fn start_add(&mut self) {
-        self.input_mode = InputMode::ChoosingBuildType;
+        self.input_mode = InputMode::AddingSource;
         self.input.clear();
         self.set_message(
-            "¿Requiere compilación? 1) No • 2) Sí (build + deploy de dist)",
+            "Ruta local del repositorio a sincronizar (ej. /var/www/html/mi-app)",
             Color::Cyan,
         );
     }
 
     fn start_edit(&mut self) {
-        if let Some(index) = self.list_state.selected() {
-            if let Some(repo) = self.repos.get(index) {
-                self.input_mode = InputMode::EditingSource(index);
-                self.input = repo.repo_path.clone();
-                self.set_message(
-                    "Edita la ruta local del repositorio seleccionado",
-                    Color::Cyan,
-                );
-            }
+        if let Some(index) = self.list_state.selected()
+            && let Some(repo) = self.repos.get(index)
+        {
+            self.input_mode = InputMode::EditingSource(index);
+            self.input = repo.repo_path.clone();
+            self.set_message(
+                "Edita la ruta local del repositorio seleccionado",
+                Color::Cyan,
+            );
         }
     }
 
     fn delete_selected(&mut self) -> Result<(), String> {
-        if let Some(index) = self.list_state.selected() {
-            if index < self.repos.len() {
-                self.repos.remove(index);
-                self.persist()?;
-                if self.repos.is_empty() {
-                    self.list_state.select(None);
-                } else if index >= self.repos.len() {
-                    self.list_state.select(Some(self.repos.len() - 1));
-                }
-                self.set_message("Repositorio eliminado", Color::Yellow);
+        if let Some(index) = self.list_state.selected()
+            && index < self.repos.len()
+        {
+            self.repos.remove(index);
+            self.persist()?;
+            if self.repos.is_empty() {
+                self.list_state.select(None);
+            } else if index >= self.repos.len() {
+                self.list_state.select(Some(self.repos.len() - 1));
             }
+            self.set_message("Repositorio eliminado", Color::Yellow);
         }
         Ok(())
     }
@@ -194,34 +180,19 @@ impl<'a> RepoManager<'a> {
     fn submit(&mut self) -> Result<(), String> {
         let input_value = self.input.trim().to_string();
         match self.input_mode.clone() {
-            InputMode::AddingSource { requires_build } => {
+            InputMode::AddingSource => {
                 if input_value.is_empty() {
                     self.set_message("La ruta del repositorio no puede estar vacía", Color::Red);
                     return Ok(());
                 }
 
-                if requires_build {
-                    self.begin_destination_input(input_value);
-                } else {
-                    return self.finalize_simple_repo(input_value);
-                }
-            }
-            InputMode::AddingDestination { source } => {
-                if input_value.is_empty() {
-                    self.finalize_simple_repo(source)?;
-                    return Ok(());
-                }
-
-                let deploy_target = input_value.clone();
-                self.repos
-                    .push(RepoDefinition::new(source, Some(deploy_target.clone())));
+                self.repos.push(RepoDefinition::new(input_value));
                 self.persist()?;
                 self.list_state.select(Some(self.repos.len() - 1));
-                self.set_message("Repositorio con build añadido", Color::Green);
+                self.set_message("Repositorio añadido", Color::Green);
                 self.input_mode = InputMode::Normal;
                 self.input.clear();
             }
-            InputMode::ChoosingBuildType => {}
             InputMode::EditingSource(index) => {
                 if input_value.is_empty() {
                     self.set_message("La ruta del repositorio no puede estar vacía", Color::Red);
@@ -232,43 +203,12 @@ impl<'a> RepoManager<'a> {
                     self.cancel_input();
                     return Ok(());
                 }
-                let current_destination =
-                    self.repos[index].deploy_target.clone().unwrap_or_default();
-                self.input_mode = InputMode::EditingDestination {
-                    index,
-                    source: input_value,
-                };
-                self.input = current_destination;
-                self.set_message(
-                    "Ruta destino de build (vacío para desactivar build)",
-                    Color::Cyan,
-                );
-            }
-            InputMode::EditingDestination { index, source } => {
-                if index >= self.repos.len() {
-                    self.set_message("No se encontró el repositorio seleccionado", Color::Red);
-                    self.input_mode = InputMode::Normal;
-                    self.input.clear();
-                    return Ok(());
-                }
-                let deploy_target = if input_value.is_empty() {
-                    None
-                } else {
-                    Some(input_value.clone())
-                };
+
                 if let Some(repo) = self.repos.get_mut(index) {
-                    repo.repo_path = source;
-                    repo.deploy_target = deploy_target.clone();
+                    repo.repo_path = input_value;
                 }
                 self.persist()?;
-                self.set_message(
-                    if deploy_target.is_some() {
-                        "Repositorio actualizado (build activo)"
-                    } else {
-                        "Repositorio actualizado"
-                    },
-                    Color::Green,
-                );
+                self.set_message("Repositorio actualizado", Color::Green);
                 self.input_mode = InputMode::Normal;
                 self.input.clear();
             }
@@ -276,42 +216,6 @@ impl<'a> RepoManager<'a> {
         }
 
         Ok(())
-    }
-
-    fn begin_source_input(&mut self, requires_build: bool) {
-        self.input_mode = InputMode::AddingSource { requires_build };
-        self.input.clear();
-        if requires_build {
-            self.set_message(
-                "Ruta origen del proyecto a compilar (ej. /root/proyects/mi-app)",
-                Color::Cyan,
-            );
-        } else {
-            self.set_message(
-                "Ruta del repositorio sin compilación (ej. /var/www/html/mi-app)",
-                Color::Cyan,
-            );
-        }
-    }
-
-    fn finalize_simple_repo(&mut self, source: String) -> Result<(), String> {
-        self.repos
-            .push(RepoDefinition::new(source, Option::<String>::None));
-        self.persist()?;
-        self.list_state.select(Some(self.repos.len() - 1));
-        self.set_message("Repositorio añadido", Color::Green);
-        self.input_mode = InputMode::Normal;
-        self.input.clear();
-        Ok(())
-    }
-
-    fn begin_destination_input(&mut self, source: String) {
-        self.input_mode = InputMode::AddingDestination { source };
-        self.input.clear();
-        self.set_message(
-            "Ruta destino de build (ej. /var/www/html/mi-app/public). Vacío = simple",
-            Color::Cyan,
-        );
     }
 
     fn cancel_input(&mut self) {
@@ -339,11 +243,8 @@ impl<'a> RepoManager<'a> {
     fn mode_hint(&self) -> &'static str {
         match self.input_mode {
             InputMode::Normal => "Normal",
-            InputMode::ChoosingBuildType => "Elegir tipo",
-            InputMode::AddingSource { .. } => "Agregar origen",
-            InputMode::AddingDestination { .. } => "Agregar destino",
-            InputMode::EditingSource(_) => "Editar origen",
-            InputMode::EditingDestination { .. } => "Editar destino",
+            InputMode::AddingSource => "Agregar",
+            InputMode::EditingSource(_) => "Editar",
         }
     }
 }
@@ -368,48 +269,33 @@ fn run_loop(
             continue;
         }
 
-        match event::read().map_err(|e| format!("No se pudo leer el evento de entrada: {}", e))? {
-            Event::Key(KeyEvent {
-                code, modifiers, ..
-            }) => {
-                if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
-                    return Ok(());
-                }
-
-                match manager.input_mode.clone() {
-                    InputMode::Normal => match code {
-                        KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                        KeyCode::Char('a') => manager.start_add(),
-                        KeyCode::Char('e') | KeyCode::Enter => manager.start_edit(),
-                        KeyCode::Char('d') => manager.delete_selected()?,
-                        KeyCode::Down => manager.select_next(),
-                        KeyCode::Up => manager.select_previous(),
-                        _ => {}
-                    },
-                    InputMode::ChoosingBuildType => match code {
-                        KeyCode::Char('1') | KeyCode::Char('n') | KeyCode::Char('N') => {
-                            manager.begin_source_input(false)
-                        }
-                        KeyCode::Char('2') | KeyCode::Char('s') | KeyCode::Char('S') => {
-                            manager.begin_source_input(true)
-                        }
-                        KeyCode::Esc => manager.cancel_input(),
-                        _ => {}
-                    },
-                    InputMode::AddingSource { .. }
-                    | InputMode::AddingDestination { .. }
-                    | InputMode::EditingSource(_)
-                    | InputMode::EditingDestination { .. } => match code {
-                        KeyCode::Enter => manager.submit()?,
-                        KeyCode::Esc => manager.cancel_input(),
-                        KeyCode::Backspace => manager.backspace(),
-                        KeyCode::Char(c) => manager.add_char(c),
-                        KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End => {}
-                        _ => {}
-                    },
-                }
+        if let Event::Key(KeyEvent {
+            code, modifiers, ..
+        }) = event::read().map_err(|e| format!("No se pudo leer el evento de entrada: {}", e))?
+        {
+            if modifiers.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
+                return Ok(());
             }
-            _ => {}
+
+            match manager.input_mode.clone() {
+                InputMode::Normal => match code {
+                    KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
+                    KeyCode::Char('a') => manager.start_add(),
+                    KeyCode::Char('e') | KeyCode::Enter => manager.start_edit(),
+                    KeyCode::Char('d') => manager.delete_selected()?,
+                    KeyCode::Down => manager.select_next(),
+                    KeyCode::Up => manager.select_previous(),
+                    _ => {}
+                },
+                InputMode::AddingSource | InputMode::EditingSource(_) => match code {
+                    KeyCode::Enter => manager.submit()?,
+                    KeyCode::Esc => manager.cancel_input(),
+                    KeyCode::Backspace => manager.backspace(),
+                    KeyCode::Char(c) => manager.add_char(c),
+                    KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End => {}
+                    _ => {}
+                },
+            }
         }
     }
 }
@@ -494,30 +380,17 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                     .map(|ts| format!("hace {}", humanize_elapsed(now_ts.saturating_sub(ts))))
                     .unwrap_or_else(|| "sin registros".to_string());
 
-                let label = match &repo.deploy_target {
-                    Some(target) if !target.is_empty() => Line::from(vec![
-                        Span::styled(
-                            format!("{:>2}. ", i + 1),
-                            Style::default().fg(Color::DarkGray),
-                        ),
-                        Span::styled("BUILD ", Style::default().fg(Color::Black).bg(Color::Green)),
-                        Span::styled(format!(" {} -> {}", repo.repo_path, target), base_style),
-                        Span::raw("  | "),
-                        Span::styled(status_label, status_style),
-                        Span::raw(format!("  |  Últ. sync: {}", last_sync_label)),
-                    ]),
-                    _ => Line::from(vec![
-                        Span::styled(
-                            format!("{:>2}. ", i + 1),
-                            Style::default().fg(Color::DarkGray),
-                        ),
-                        Span::styled("SYNC ", Style::default().fg(Color::Black).bg(Color::Blue)),
-                        Span::styled(format!(" {}", repo.repo_path), base_style),
-                        Span::raw("  | "),
-                        Span::styled(status_label, status_style),
-                        Span::raw(format!("  |  Últ. sync: {}", last_sync_label)),
-                    ]),
-                };
+                let label = Line::from(vec![
+                    Span::styled(
+                        format!("{:>2}. ", i + 1),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                    Span::styled("SYNC ", Style::default().fg(Color::Black).bg(Color::Blue)),
+                    Span::styled(format!(" {}", repo.repo_path), base_style),
+                    Span::raw("  | "),
+                    Span::styled(status_label, status_style),
+                    Span::raw(format!("  |  Últ. sync: {}", last_sync_label)),
+                ]);
                 ListItem::new(label)
             })
             .collect()
@@ -537,8 +410,6 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         .highlight_symbol("❯ ");
     frame.render_stateful_widget(list, body_chunks[0], &mut manager.list_state);
 
-    let build_count = manager.build_count();
-    let sync_only_count = manager.repos.len().saturating_sub(build_count);
     let error_count = manager.error_count();
     let selected_state = manager.selected_repo_state();
     let selected_last_sync = selected_state
@@ -571,8 +442,6 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                 .add_modifier(Modifier::BOLD),
         )]),
         Line::from(format!("Total: {}", manager.repos.len())),
-        Line::from(format!("Con build: {}", build_count)),
-        Line::from(format!("Solo sync: {}", sync_only_count)),
         Line::from(format!("Con error: {}", error_count)),
         Line::from(""),
         Line::from(vec![Span::styled(
@@ -604,29 +473,9 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
 
     let (input_text, input_title) = match manager.input_mode {
         InputMode::Normal => ("".to_string(), "Entrada"),
-        InputMode::AddingSource {
-            requires_build: false,
-        } => (
+        InputMode::AddingSource | InputMode::EditingSource(_) => (
             manager.input.clone(),
-            "Ruta origen sin compilación (ej. /var/www/html/mi-app)",
-        ),
-        InputMode::AddingSource {
-            requires_build: true,
-        } => (
-            manager.input.clone(),
-            "Ruta origen para compilar (ej. /root/proyects/mi-app)",
-        ),
-        InputMode::EditingSource(_) => (
-            manager.input.clone(),
-            "Ruta origen (sin compilación: /var/www/html/mi-app | con compilación: /root/proyects/mi-app)",
-        ),
-        InputMode::AddingDestination { .. } | InputMode::EditingDestination { .. } => (
-            manager.input.clone(),
-            "Ruta destino de build (ej. /var/www/html/mi-app/public)",
-        ),
-        InputMode::ChoosingBuildType => (
-            "1 = Sin compilación | 2 = Con compilación".to_string(),
-            "Tipo de repositorio",
+            "Ruta del repositorio (ej. /var/www/html/mi-app)",
         ),
     };
 
@@ -637,10 +486,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
 
     if matches!(
         manager.input_mode,
-        InputMode::AddingSource { .. }
-            | InputMode::AddingDestination { .. }
-            | InputMode::EditingSource(_)
-            | InputMode::EditingDestination { .. }
+        InputMode::AddingSource | InputMode::EditingSource(_)
     ) {
         frame.set_cursor(
             chunks[2].x + manager.input.len() as u16 + 1,
@@ -753,6 +599,7 @@ fn humanize_elapsed(seconds: i64) -> String {
 
 fn truncate_message(message: &str, max_chars: usize) -> String {
     let mut out = String::new();
+
     for (count, ch) in message.chars().enumerate() {
         if count >= max_chars {
             out.push('…');

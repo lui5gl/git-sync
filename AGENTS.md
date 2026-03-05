@@ -105,7 +105,7 @@ Useful test workflow when adding new coverage:
 - Types/traits/enums: `PascalCase`.
 - Functions/methods/modules/variables: `snake_case`.
 - Constants/statics: `UPPER_SNAKE_CASE`.
-- Use descriptive names tied to behavior (`build_and_deploy`, `count_commits_behind`).
+- Use descriptive names tied to behavior (`process_single`, `count_commits_behind`).
 
 ### Error Handling
 

@@ -7,17 +7,12 @@ use std::path::Path;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RepoDefinition {
     pub repo_path: String,
-    pub deploy_target: Option<String>,
 }
 
 impl RepoDefinition {
-    pub fn new<P: Into<String>, D: Into<String>>(repo_path: P, deploy_target: Option<D>) -> Self {
+    pub fn new<P: Into<String>>(repo_path: P) -> Self {
         let repo_path = repo_path.into();
-        let deploy_target = deploy_target.map(Into::into);
-        RepoDefinition {
-            repo_path,
-            deploy_target,
-        }
+        RepoDefinition { repo_path }
     }
 
     pub fn from_line(line: &str) -> Option<Self> {
@@ -31,31 +26,20 @@ impl RepoDefinition {
             if source.is_empty() {
                 return None;
             }
-            let target = target.trim();
-            let deploy_target = if target.is_empty() {
-                None
-            } else {
-                Some(target.to_string())
-            };
-            Some(RepoDefinition {
-                repo_path: source.to_string(),
-                deploy_target,
-            })
+            if !target.trim().is_empty() {
+                eprintln!(
+                    "⚠️ Se ignoró el destino de despliegue en {}. El modo compilación fue eliminado.",
+                    source
+                );
+            }
+            Some(RepoDefinition::new(source.to_string()))
         } else {
-            Some(RepoDefinition {
-                repo_path: trimmed.to_string(),
-                deploy_target: None,
-            })
+            Some(RepoDefinition::new(trimmed.to_string()))
         }
     }
 
     pub fn to_line(&self) -> String {
-        match &self.deploy_target {
-            Some(target) if !target.trim().is_empty() => {
-                format!("{} => {}", self.repo_path.trim(), target.trim())
-            }
-            _ => self.repo_path.trim().to_string(),
-        }
+        self.repo_path.trim().to_string()
     }
 }
 
@@ -123,12 +107,9 @@ impl Config {
     fn ensure_repos_file(&self) -> Result<bool, String> {
         if !Path::new(&self.repos_file).exists() {
             let default_content = "# Añada rutas absolutas de repositorios Git, una por línea\n\
-                                   # Use rutas locales del servidor (no URLs de GitHub/GitLab)\n\
-                                   # Para proyectos que requieren compilar y desplegar, utilice:\n\
-                                   # /ruta/al/proyecto => /ruta/destino\n\
-                                   # Ejemplos:\n\
-                                   # Proyecto sin compilación: /var/www/html/mi-app\n\
-                                   # Proyecto con compilación: /root/proyects/mi-app => /var/www/html/mi-app/public\n";
+                                    # Use rutas locales del servidor (no URLs de GitHub/GitLab)\n\
+                                    # Ejemplo:\n\
+                                    # /var/www/html/mi-app\n";
             fs::write(&self.repos_file, default_content).map_err(|e| {
                 format!(
                     "❌ No se pudo crear el archivo de repositorios {}: {}",
@@ -253,13 +234,8 @@ impl Config {
     pub fn write_repos(&self, repos: &[RepoDefinition]) -> Result<(), String> {
         let mut content = String::from("# Lista de repositorios administrada por git-sync\n");
         content.push_str("# Especifique una ruta absoluta por línea (ruta local, no URL remota)\n");
-        content.push_str("# Para proyectos que requieren build, utilice el formato:\n");
-        content.push_str("#   /ruta/al/proyecto => /ruta/destino\n");
-        content.push_str("# Ejemplos:\n");
-        content.push_str("#   Proyecto sin compilación: /var/www/html/mi-app\n");
-        content.push_str(
-            "#   Proyecto con compilación: /root/proyects/mi-app => /var/www/html/mi-app/public\n",
-        );
+        content.push_str("# Ejemplo:\n");
+        content.push_str("#   /var/www/html/mi-app\n");
         for repo in repos {
             content.push_str(&repo.to_line());
             content.push('\n');
