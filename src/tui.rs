@@ -128,12 +128,17 @@ impl<'a> RepoManager<'a> {
     fn error_count(&self) -> usize {
         self.repos
             .iter()
+            .filter(|repo| repo.enabled)
             .filter(|repo| {
                 self.sync_state
                     .get(&repo.repo_path)
                     .is_some_and(repo_has_active_error)
             })
             .count()
+    }
+
+    fn paused_count(&self) -> usize {
+        self.repos.iter().filter(|repo| !repo.enabled).count()
     }
 
     fn select_next(&mut self) {
@@ -184,10 +189,22 @@ impl<'a> RepoManager<'a> {
                 .push("No hay repositorio seleccionado.".to_string());
             return;
         };
+        let repo_enabled = self
+            .selected_repo()
+            .map(|repo| repo.enabled)
+            .unwrap_or(true);
 
         self.details_repo_path = Some(repo_path.clone());
         self.details_lines
             .push(format!("Repositorio: {}", repo_path));
+        self.details_lines.push(format!(
+            "Sync: {}",
+            if repo_enabled {
+                "Activo"
+            } else {
+                "Desactivado"
+            }
+        ));
 
         let state = self.sync_state.get(&repo_path);
         let branch = state
@@ -281,6 +298,38 @@ impl<'a> RepoManager<'a> {
                 self.list_state.select(Some(self.repos.len() - 1));
             }
             self.set_message("Repositorio eliminado", Color::Yellow);
+        }
+        Ok(())
+    }
+
+    fn toggle_selected_sync(&mut self) -> Result<(), String> {
+        let Some(index) = self.list_state.selected() else {
+            return Ok(());
+        };
+        if index >= self.repos.len() {
+            return Ok(());
+        }
+
+        if let Some(repo) = self.repos.get_mut(index) {
+            repo.enabled = !repo.enabled;
+            let label = if repo.enabled {
+                "Sync activado para el repositorio"
+            } else {
+                "Sync desactivado para el repositorio"
+            };
+            self.set_message(
+                label,
+                if repo.enabled {
+                    Color::Green
+                } else {
+                    Color::Yellow
+                },
+            );
+        }
+
+        self.persist()?;
+        if self.details_open {
+            self.refresh_details();
         }
         Ok(())
     }
@@ -391,6 +440,7 @@ fn run_loop(
                     KeyCode::Char('a') => manager.start_add(),
                     KeyCode::Char('e') | KeyCode::Enter => manager.start_edit(),
                     KeyCode::Char('d') => manager.delete_selected()?,
+                    KeyCode::Char('s') => manager.toggle_selected_sync()?,
                     KeyCode::Char(' ') => manager.toggle_details(),
                     KeyCode::Down => manager.select_next(),
                     KeyCode::Up => manager.select_previous(),
@@ -480,6 +530,10 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                 let base_style = Style::default().fg(Color::White);
                 let state = manager.sync_state.get(&repo.repo_path);
                 let (status_label, status_style) = match state {
+                    _ if !repo.enabled => (
+                        " PAUSADO ",
+                        Style::default().fg(Color::Black).bg(Color::Yellow),
+                    ),
                     Some(repo_state) if repo_has_active_error(repo_state) => {
                         (" ERROR ", Style::default().fg(Color::White).bg(Color::Red))
                     }
@@ -531,6 +585,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
     frame.render_stateful_widget(list, body_chunks[0], &mut manager.list_state);
 
     let error_count = manager.error_count();
+    let paused_count = manager.paused_count();
     let selected_state = manager.selected_repo_state();
     let selected_last_sync = selected_state
         .and_then(|state| state.last_success_ts)
@@ -556,6 +611,10 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
     let selected_branch = selected_state
         .and_then(|state| state.last_branch.clone())
         .unwrap_or_else(|| "-".to_string());
+    let selected_repo_enabled = manager
+        .selected_repo()
+        .map(|repo| repo.enabled)
+        .unwrap_or(true);
     let selected_pulled_commit = selected_state
         .and_then(|state| state.last_pulled_commit.clone())
         .map(|commit| truncate_message(&commit, 72))
@@ -569,6 +628,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                 .add_modifier(Modifier::BOLD),
         )]),
         Line::from(format!("Total: {}", manager.repos.len())),
+        Line::from(format!("Pausados: {}", paused_count)),
         Line::from(format!("Con error: {}", error_count)),
         Line::from(""),
         Line::from(vec![Span::styled(
@@ -588,6 +648,14 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                 .add_modifier(Modifier::BOLD),
         )]),
         Line::from(format!("Rama: {}", selected_branch)),
+        Line::from(format!(
+            "Sync: {}",
+            if selected_repo_enabled {
+                "Activo"
+            } else {
+                "Desactivado"
+            }
+        )),
         Line::from(format!("Estado: {}", selected_status)),
         Line::from(format!("Último resultado: {}", selected_result)),
         Line::from(format!("Último commit pull: {}", selected_pulled_commit)),
@@ -685,6 +753,14 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" eliminar  "),
+        Span::styled(
+            " S ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" activar/pausar  "),
         Span::styled(
             " Espacio ",
             Style::default()

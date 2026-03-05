@@ -39,6 +39,16 @@ impl<'a> RepoProcessor<'a> {
         let mut errors: Vec<(String, String)> = Vec::new();
 
         for repo in repo_defs {
+            if !repo.enabled {
+                if self.verbose {
+                    self.logger.log_line(&format!(
+                        "⏸️ Repositorio pausado (sync desactivado): {}",
+                        repo.repo_path
+                    ));
+                }
+                continue;
+            }
+
             sync_state.mark_attempt(&repo.repo_path);
 
             match self.process_single(&repo) {

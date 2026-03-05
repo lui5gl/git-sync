@@ -7,12 +7,16 @@ use std::path::Path;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RepoDefinition {
     pub repo_path: String,
+    pub enabled: bool,
 }
 
 impl RepoDefinition {
     pub fn new<P: Into<String>>(repo_path: P) -> Self {
         let repo_path = repo_path.into();
-        RepoDefinition { repo_path }
+        RepoDefinition {
+            repo_path,
+            enabled: true,
+        }
     }
 
     pub fn from_line(line: &str) -> Option<Self> {
@@ -21,7 +25,13 @@ impl RepoDefinition {
             return None;
         }
 
-        if let Some((source, target)) = trimmed.split_once("=>") {
+        let (enabled, raw_path) = if let Some(rest) = trimmed.strip_prefix('!') {
+            (false, rest.trim())
+        } else {
+            (true, trimmed)
+        };
+
+        if let Some((source, target)) = raw_path.split_once("=>") {
             let source = source.trim();
             if source.is_empty() {
                 return None;
@@ -32,14 +42,22 @@ impl RepoDefinition {
                     source
                 );
             }
-            Some(RepoDefinition::new(source.to_string()))
+            let mut repo = RepoDefinition::new(source.to_string());
+            repo.enabled = enabled;
+            Some(repo)
         } else {
-            Some(RepoDefinition::new(trimmed.to_string()))
+            let mut repo = RepoDefinition::new(raw_path.to_string());
+            repo.enabled = enabled;
+            Some(repo)
         }
     }
 
     pub fn to_line(&self) -> String {
-        self.repo_path.trim().to_string()
+        if self.enabled {
+            self.repo_path.trim().to_string()
+        } else {
+            format!("! {}", self.repo_path.trim())
+        }
     }
 }
 
@@ -108,6 +126,7 @@ impl Config {
         if !Path::new(&self.repos_file).exists() {
             let default_content = "# Añada rutas absolutas de repositorios Git, una por línea\n\
                                     # Use rutas locales del servidor (no URLs de GitHub/GitLab)\n\
+                                    # Para desactivar un repo temporalmente, use prefijo !\n\
                                     # Ejemplo:\n\
                                     # /var/www/html/mi-app\n";
             fs::write(&self.repos_file, default_content).map_err(|e| {
@@ -234,6 +253,7 @@ impl Config {
     pub fn write_repos(&self, repos: &[RepoDefinition]) -> Result<(), String> {
         let mut content = String::from("# Lista de repositorios administrada por git-sync\n");
         content.push_str("# Especifique una ruta absoluta por línea (ruta local, no URL remota)\n");
+        content.push_str("# Para desactivar un repo temporalmente use: ! /ruta/al/repo\n");
         content.push_str("# Ejemplo:\n");
         content.push_str("#   /var/www/html/mi-app\n");
         for repo in repos {
