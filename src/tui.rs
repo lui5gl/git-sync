@@ -379,6 +379,9 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                     .and_then(|s| s.last_success_ts)
                     .map(|ts| format!("hace {}", humanize_elapsed(now_ts.saturating_sub(ts))))
                     .unwrap_or_else(|| "sin registros".to_string());
+                let branch_label = state
+                    .and_then(|s| s.last_branch.clone())
+                    .unwrap_or_else(|| "?".to_string());
 
                 let label = Line::from(vec![
                     Span::styled(
@@ -389,7 +392,10 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                     Span::styled(format!(" {}", repo.repo_path), base_style),
                     Span::raw("  | "),
                     Span::styled(status_label, status_style),
-                    Span::raw(format!("  |  Últ. sync: {}", last_sync_label)),
+                    Span::raw(format!(
+                        "  |  Rama: {}  |  Últ. sync: {}",
+                        branch_label, last_sync_label
+                    )),
                 ]);
                 ListItem::new(label)
             })
@@ -433,6 +439,9 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         .and_then(|state| state.last_result.clone())
         .map(|result| truncate_message(&result, 72))
         .unwrap_or_else(|| "-".to_string());
+    let selected_branch = selected_state
+        .and_then(|state| state.last_branch.clone())
+        .unwrap_or_else(|| "-".to_string());
 
     let panel_lines = vec![
         Line::from(vec![Span::styled(
@@ -460,6 +469,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         )]),
+        Line::from(format!("Rama: {}", selected_branch)),
         Line::from(format!("Estado: {}", selected_status)),
         Line::from(format!("Último resultado: {}", selected_result)),
         Line::from(format!("Último sync OK: {}", selected_last_sync)),

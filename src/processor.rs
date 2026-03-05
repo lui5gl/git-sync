@@ -42,8 +42,8 @@ impl<'a> RepoProcessor<'a> {
             sync_state.mark_attempt(&repo.repo_path);
 
             match self.process_single(&repo) {
-                Ok(result) => {
-                    sync_state.mark_success(&repo.repo_path, result);
+                Ok((branch, result)) => {
+                    sync_state.mark_success(&repo.repo_path, branch, result);
                     if self.verbose {
                         self.logger.log("\n");
                     }
@@ -87,7 +87,7 @@ impl<'a> RepoProcessor<'a> {
         }
     }
 
-    fn process_single(&self, repo: &RepoDefinition) -> Result<String, String> {
+    fn process_single(&self, repo: &RepoDefinition) -> Result<(String, String), String> {
         if self.verbose {
             self.logger
                 .log_line("==========================================");
@@ -120,7 +120,7 @@ impl<'a> RepoProcessor<'a> {
         Ok(())
     }
 
-    fn check_and_pull(&self, repo_path: &str) -> Result<String, String> {
+    fn check_and_pull(&self, repo_path: &str) -> Result<(String, String), String> {
         let repo = GitRepo::new(repo_path.to_string());
 
         if self.verbose {
@@ -146,7 +146,7 @@ impl<'a> RepoProcessor<'a> {
                     self.logger
                         .log_line("✅ El repositorio ya está actualizado.");
                 }
-                Ok("Sin cambios remotos".to_string())
+                Ok((branch, "Sin cambios remotos".to_string()))
             }
             Ok(count) => {
                 if self.verbose {
@@ -164,7 +164,7 @@ impl<'a> RepoProcessor<'a> {
                                 output.trim()
                             ));
                         }
-                        Ok(format!("Pull aplicado: {} commit(s)", count))
+                        Ok((branch, format!("Pull aplicado: {} commit(s)", count)))
                     }
                     Err(e) => {
                         let msg = format!("❌ No se pudo ejecutar `git pull`: {}", e);
