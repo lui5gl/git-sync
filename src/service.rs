@@ -68,6 +68,44 @@ pub fn uninstall_service() -> Result<(), String> {
     Ok(())
 }
 
+pub fn uninstall_all() -> Result<(), String> {
+    let config = Config::new();
+
+    if Path::new(SERVICE_PATH).exists() {
+        uninstall_service()?;
+    } else {
+        println!("ℹ️ El servicio git-sync no está instalado.");
+    }
+
+    if Path::new(&config.config_dir).exists() {
+        fs::remove_dir_all(&config.config_dir).map_err(|e| {
+            format!(
+                "❌ No se pudo eliminar el directorio de configuración {}: {}",
+                config.config_dir, e
+            )
+        })?;
+        println!("🗑️ Configuración eliminada: {}", config.config_dir);
+    } else {
+        println!("ℹ️ No existe configuración en {}", config.config_dir);
+    }
+
+    if Path::new(&config.log_dir).exists() {
+        fs::remove_dir_all(&config.log_dir).map_err(|e| {
+            format!(
+                "❌ No se pudo eliminar el directorio de logs {}: {}",
+                config.log_dir, e
+            )
+        })?;
+        println!("🗑️ Logs eliminados: {}", config.log_dir);
+    } else {
+        println!("ℹ️ No existe directorio de logs en {}", config.log_dir);
+    }
+
+    println!("✅ Desinstalación completada.");
+    println!("👉 Si desea eliminar el binario, borre manualmente /usr/local/bin/git-sync.");
+    Ok(())
+}
+
 fn resolve_service_user() -> Result<(String, String), String> {
     fn home_for_user(username: &str) -> Option<String> {
         if let Ok(contents) = fs::read_to_string("/etc/passwd") {

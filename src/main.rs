@@ -10,7 +10,7 @@ mod tui;
 use config::{Config, RepoDefinition};
 use logger::Logger;
 use processor::RepoProcessor;
-use service::{install_service, uninstall_service};
+use service::{install_service, uninstall_all, uninstall_service};
 use settings::Settings;
 use std::env;
 use std::fs;
@@ -44,6 +44,8 @@ fn print_help() {
       Ejecuta el daemon de sincronización (pensado para systemd).
   • git-sync uninstall-service
       Detiene y elimina el servicio systemd.
+  • git-sync uninstall
+      Elimina servicio, configuración y logs de git-sync.
   • git-sync update
       Actualiza a la última versión estable.
   • git-sync --add-current
@@ -89,6 +91,13 @@ fn main() {
         Some("uninstall-service") => {
             if let Err(err) = uninstall_service() {
                 eprintln!("❌ No se pudo desinstalar el servicio: {}", err);
+                std::process::exit(1);
+            }
+            return;
+        }
+        Some("uninstall") => {
+            if let Err(err) = uninstall_all() {
+                eprintln!("❌ No se pudo completar la desinstalación: {}", err);
                 std::process::exit(1);
             }
             return;
