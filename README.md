@@ -14,7 +14,8 @@ Daemon ligero que mantiene múltiples repositorios Git al día. Nació para reem
 - 🖥️ **Interfaz TUI** (terminal) para añadir, editar o eliminar repositorios sin tocar archivos manualmente.
 - 🪵 **Logging persistente** en `/var/log/git-sync/git-sync.log` con marcas de tiempo y mensajes claros (emojis incluidos).
 - ⚙️ **Configuración declarativa** en `/etc/git-sync`, creada automáticamente con permisos apropiados.
-- ♻️ **Modo demonio continuo** o ejecución única configurable, con relectura automática de ajustes entre ciclos.
+- 🕹️ **Refresh remoto automático secuencial**: la TUI refresca estado remoto en orden, repositorio por repositorio.
+- ⬇️ **Pull manual controlado**: aplica actualizaciones solo bajo demanda (`u` para un repo, `U` para todos).
 - 📦 **Artefactos oficiales**: binarios estáticos para Linux glibc (`git-sync-linux-x86_64-glibc.tar.gz`) y musl (`git-sync-linux-x86_64-musl.tar.gz`).
 
 ---
@@ -67,12 +68,12 @@ La primera ejecución instala el servicio `systemd`, crea los directorios necesa
 ### `config.toml`
 
 ```toml
-sync_interval = 60          # Segundos entre ciclos de sincronización
+sync_interval = 60          # Segundos entre refresh remotos automáticos en la TUI
 stop_on_error = true        # Detener el daemon ante el primer error
 git_timeout = 300           # Timeout para operaciones Git
 max_retries = 0             # Reintentos para fallos transitorios
 verbose = true              # Incluir mensajes detallados en el log
-continuous_mode = true      # Ciclos infinitos (false = una sola pasada)
+continuous_mode = false     # Se conserva por compatibilidad (la sincronización es manual)
 ```
 
 ### `repositories.txt`
@@ -102,7 +103,7 @@ Puedes editar el archivo a mano o usar la TUI (`sudo git-sync`) para que el form
 
 Ejecuta `sudo git-sync` (sin argumentos) para abrir la consola interactiva:
 
-- `↑/↓` navegar, `Enter` o `e` editar, `a` añadir, `d` eliminar, `s` activar/pausar sync, `c` comando post-sync, `Espacio` ver detalles, `q/Esc` salir.
+- `↑/↓` navegar, `Enter` o `e` editar, `a` añadir, `d` eliminar, `s` activar/pausar sync, `c` comando post-sync, `u` sincronizar seleccionado, `U` sincronizar todo, `Espacio` ver detalles, `q/Esc` salir.
 - Al añadir un repositorio:
   1. Ingresas la ruta absoluta al directorio del repositorio **ya clonado** (no la URL remota).
 - Los mensajes de estado aparecen en la parte inferior con colores y emojis.

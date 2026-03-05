@@ -18,8 +18,6 @@ use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::thread;
-use std::time::Duration;
 use tui::run_repo_manager;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -171,7 +169,7 @@ fn run_daemon(config: Config) {
         return;
     }
 
-    let mut settings = Settings::load_or_create(&config.settings_file);
+    let settings = Settings::load_or_create(&config.settings_file);
     let logger = Logger::new(config.log_file.clone());
 
     if settings.verbose {
@@ -191,27 +189,10 @@ fn run_daemon(config: Config) {
             settings.git_timeout
         ));
         logger.log_line(&format!("🔁 Reintentos máximos: {}", settings.max_retries));
-        logger.log_line(&format!("♾️ Modo continuo: {}\n", settings.continuous_mode));
+        logger.log_line("🕹️ Modo de sincronización: manual (sin ciclos automáticos)\n");
     }
 
-    if !settings.continuous_mode {
-        run_sync_cycle(&config, &logger, &settings);
-        return;
-    }
-
-    loop {
-        run_sync_cycle(&config, &logger, &settings);
-
-        if settings.verbose {
-            logger.log_line(&format!(
-                "\n⏳ En espera de {} segundos antes del siguiente ciclo...\n",
-                settings.sync_interval
-            ));
-        }
-
-        thread::sleep(Duration::from_secs(settings.sync_interval));
-        settings.reload(&config.settings_file);
-    }
+    run_sync_cycle(&config, &logger, &settings);
 }
 
 fn run_sync_cycle(config: &Config, logger: &Logger, settings: &Settings) {

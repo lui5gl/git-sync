@@ -1,5 +1,7 @@
 use crate::config::{Config, RepoDefinition};
 use crate::git::GitRepo;
+use crate::logger::Logger;
+use crate::processor::RepoProcessor;
 use crate::sync_state::{RepoSyncState, SyncStateSnapshot};
 use chrono::Local;
 use crossterm::ExecutableCommand;
@@ -14,6 +16,7 @@ use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
+use std::collections::HashMap;
 use std::io::{Stdout, stdout};
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -24,6 +27,14 @@ enum InputMode {
     AddingSource,
     EditingSource(usize),
     EditingPostCommand(usize),
+}
+
+#[derive(Clone, Debug, Default)]
+struct RepoRefreshStatus {
+    branch: Option<String>,
+    commits_behind: Option<usize>,
+    last_refresh_ts: Option<i64>,
+    last_error: Option<String>,
 }
 
 pub fn run_repo_manager(config: &Config, sync_interval: u64) -> Result<(), String> {
@@ -60,8 +71,11 @@ struct RepoManager<'a> {
     input: String,
     message: Option<(String, Color)>,
     sync_interval: u64,
-    next_sync_deadline: Instant,
+    refresh_cursor: usize,
+    last_refresh_step: Instant,
+    refresh_step_interval: Duration,
     sync_state: SyncStateSnapshot,
+    refresh_status: HashMap<String, RepoRefreshStatus>,
     details_open: bool,
     details_lines: Vec<String>,
     details_repo_path: Option<String>,
@@ -76,6 +90,8 @@ impl<'a> RepoManager<'a> {
         }
 
         let safe_interval = sync_interval.max(1);
+        let active_count = repos.iter().filter(|repo| repo.enabled).count().max(1) as u64;
+        let per_repo_ms = ((safe_interval * 1000) / active_count).clamp(800, 4000);
 
         RepoManager {
             config,
@@ -85,8 +101,11 @@ impl<'a> RepoManager<'a> {
             input: String::new(),
             message: None,
             sync_interval: safe_interval,
-            next_sync_deadline: Instant::now() + Duration::from_secs(safe_interval),
+            refresh_cursor: 0,
+            last_refresh_step: Instant::now(),
+            refresh_step_interval: Duration::from_millis(per_repo_ms),
             sync_state: SyncStateSnapshot::load(&config.state_file),
+            refresh_status: HashMap::new(),
             details_open: false,
             details_lines: vec![
                 "Pulse Espacio para ver detalles del repositorio seleccionado.".to_string(),
@@ -96,11 +115,12 @@ impl<'a> RepoManager<'a> {
     }
 
     fn tick(&mut self) {
-        let now = Instant::now();
-        while self.next_sync_deadline <= now {
-            self.next_sync_deadline += Duration::from_secs(self.sync_interval);
-        }
         self.sync_state = SyncStateSnapshot::load(&self.config.state_file);
+
+        if self.last_refresh_step.elapsed() >= self.refresh_step_interval {
+            self.refresh_next_status();
+            self.last_refresh_step = Instant::now();
+        }
 
         if self.details_open {
             let selected_path = self.selected_repo().map(|repo| repo.repo_path.clone());
@@ -108,12 +128,6 @@ impl<'a> RepoManager<'a> {
                 self.refresh_details();
             }
         }
-    }
-
-    fn seconds_until_next_sync(&self) -> u64 {
-        self.next_sync_deadline
-            .saturating_duration_since(Instant::now())
-            .as_secs()
     }
 
     fn selected_repo(&self) -> Option<&RepoDefinition> {
@@ -124,6 +138,11 @@ impl<'a> RepoManager<'a> {
     fn selected_repo_state(&self) -> Option<&RepoSyncState> {
         let repo = self.selected_repo()?;
         self.sync_state.get(&repo.repo_path)
+    }
+
+    fn selected_refresh_status(&self) -> Option<&RepoRefreshStatus> {
+        let repo = self.selected_repo()?;
+        self.refresh_status.get(&repo.repo_path)
     }
 
     fn error_count(&self) -> usize {
@@ -140,6 +159,124 @@ impl<'a> RepoManager<'a> {
 
     fn paused_count(&self) -> usize {
         self.repos.iter().filter(|repo| !repo.enabled).count()
+    }
+
+    fn recompute_refresh_interval(&mut self) {
+        let active_count = self.repos.iter().filter(|repo| repo.enabled).count().max(1) as u64;
+        let per_repo_ms = ((self.sync_interval.max(1) * 1000) / active_count).clamp(800, 4000);
+        self.refresh_step_interval = Duration::from_millis(per_repo_ms);
+    }
+
+    fn refresh_next_status(&mut self) {
+        if self.repos.is_empty() {
+            return;
+        }
+
+        for _ in 0..self.repos.len() {
+            let index = self.refresh_cursor % self.repos.len();
+            self.refresh_cursor = (self.refresh_cursor + 1) % self.repos.len();
+
+            if let Some(repo) = self.repos.get(index) {
+                if !repo.enabled {
+                    continue;
+                }
+                let repo_clone = repo.clone();
+                self.refresh_repo_status(&repo_clone);
+                if self.details_open {
+                    self.refresh_details();
+                }
+                break;
+            }
+        }
+    }
+
+    fn outdated_count(&self) -> usize {
+        self.repos
+            .iter()
+            .filter(|repo| repo.enabled)
+            .filter(|repo| {
+                self.refresh_status
+                    .get(&repo.repo_path)
+                    .and_then(|status| status.commits_behind)
+                    .is_some_and(|count| count > 0)
+            })
+            .count()
+    }
+
+    fn refresh_all_status(&mut self) {
+        let repos = self.repos.clone();
+        for repo in repos {
+            if !repo.enabled {
+                continue;
+            }
+            self.refresh_repo_status(&repo);
+        }
+
+        if self.details_open {
+            self.refresh_details();
+        }
+    }
+
+    fn refresh_repo_status(&mut self, repo: &RepoDefinition) {
+        let now_ts = Local::now().timestamp();
+
+        if !Path::new(&repo.repo_path).exists() {
+            self.refresh_status.insert(
+                repo.repo_path.clone(),
+                RepoRefreshStatus {
+                    last_refresh_ts: Some(now_ts),
+                    last_error: Some("La ruta no existe".to_string()),
+                    ..RepoRefreshStatus::default()
+                },
+            );
+            return;
+        }
+
+        if !Path::new(&format!("{}/.git", repo.repo_path)).exists() {
+            self.refresh_status.insert(
+                repo.repo_path.clone(),
+                RepoRefreshStatus {
+                    last_refresh_ts: Some(now_ts),
+                    last_error: Some("No es un repositorio Git válido".to_string()),
+                    ..RepoRefreshStatus::default()
+                },
+            );
+            return;
+        }
+
+        let git_repo = GitRepo::new(repo.repo_path.clone());
+        let result = git_repo
+            .fetch()
+            .and_then(|_| {
+                let branch = git_repo.get_default_branch();
+                let behind = git_repo.count_commits_behind(&branch)?;
+                Ok((branch, behind))
+            })
+            .map_err(|err| err.to_string());
+
+        match result {
+            Ok((branch, behind)) => {
+                self.refresh_status.insert(
+                    repo.repo_path.clone(),
+                    RepoRefreshStatus {
+                        branch: Some(branch),
+                        commits_behind: Some(behind),
+                        last_refresh_ts: Some(now_ts),
+                        last_error: None,
+                    },
+                );
+            }
+            Err(err) => {
+                self.refresh_status.insert(
+                    repo.repo_path.clone(),
+                    RepoRefreshStatus {
+                        last_refresh_ts: Some(now_ts),
+                        last_error: Some(truncate_message(&err, 120)),
+                        ..RepoRefreshStatus::default()
+                    },
+                );
+            }
+        }
     }
 
     fn select_next(&mut self) {
@@ -214,11 +351,37 @@ impl<'a> RepoManager<'a> {
             .push(format!("Comando post-sync: {}", repo_command));
 
         let state = self.sync_state.get(&repo_path);
-        let branch = state
-            .and_then(|s| s.last_branch.clone())
+        let refresh = self.refresh_status.get(&repo_path);
+        let branch = refresh
+            .and_then(|s| s.branch.clone())
+            .or_else(|| state.and_then(|s| s.last_branch.clone()))
             .unwrap_or_else(|| "-".to_string());
         self.details_lines
             .push(format!("Rama detectada: {}", branch));
+
+        let pending = refresh
+            .and_then(|s| s.commits_behind)
+            .map(|count| count.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        self.details_lines
+            .push(format!("Commits pendientes (remote): {}", pending));
+
+        if let Some(ts) = refresh.and_then(|s| s.last_refresh_ts) {
+            self.details_lines.push(format!(
+                "Último refresh remoto: hace {}",
+                humanize_elapsed(Local::now().timestamp().saturating_sub(ts))
+            ));
+        } else {
+            self.details_lines
+                .push("Último refresh remoto: sin datos".to_string());
+        }
+
+        if let Some(refresh_error) = refresh.and_then(|s| s.last_error.clone()) {
+            self.details_lines.push(format!(
+                "Error de refresh: {}",
+                truncate_message(&refresh_error, 120)
+            ));
+        }
 
         if let Some(last_pull) = state.and_then(|s| s.last_pulled_commit.clone()) {
             self.details_lines
@@ -312,6 +475,7 @@ impl<'a> RepoManager<'a> {
         {
             self.repos.remove(index);
             self.persist()?;
+            self.recompute_refresh_interval();
             if self.repos.is_empty() {
                 self.list_state.select(None);
             } else if index >= self.repos.len() {
@@ -344,10 +508,78 @@ impl<'a> RepoManager<'a> {
         self.set_message(label, if enabled { Color::Green } else { Color::Yellow });
 
         self.persist()?;
+        self.recompute_refresh_interval();
         if self.details_open {
             self.refresh_details();
         }
         Ok(())
+    }
+
+    fn sync_selected_now(&mut self) -> Result<(), String> {
+        let Some(repo) = self.selected_repo().cloned() else {
+            return Ok(());
+        };
+
+        if !repo.enabled {
+            self.set_message(
+                "El repositorio está pausado. Actívelo con 's' antes de sincronizar.",
+                Color::Yellow,
+            );
+            return Ok(());
+        }
+
+        self.run_sync_now(vec![repo], "Repositorio sincronizado")
+    }
+
+    fn sync_all_now(&mut self) -> Result<(), String> {
+        let repos = self
+            .repos
+            .iter()
+            .filter(|repo| repo.enabled)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        if repos.is_empty() {
+            self.set_message(
+                "No hay repositorios activos para sincronizar",
+                Color::Yellow,
+            );
+            return Ok(());
+        }
+
+        self.run_sync_now(repos, "Sincronización manual completada")
+    }
+
+    fn run_sync_now(
+        &mut self,
+        repos: Vec<RepoDefinition>,
+        success_message: &str,
+    ) -> Result<(), String> {
+        self.set_message("Sincronizando...", Color::Cyan);
+        let logger = Logger::new(self.config.log_file.clone());
+        let processor = RepoProcessor::new(&logger, false, self.config.state_file.clone());
+
+        match processor.process_all(repos) {
+            Ok(_) => {
+                self.sync_state = SyncStateSnapshot::load(&self.config.state_file);
+                if self.details_open {
+                    self.refresh_details();
+                }
+                self.set_message(success_message, Color::Green);
+                Ok(())
+            }
+            Err(err) => {
+                self.sync_state = SyncStateSnapshot::load(&self.config.state_file);
+                if self.details_open {
+                    self.refresh_details();
+                }
+                self.set_message(
+                    truncate_message(&format!("Falló sincronización: {}", err), 120),
+                    Color::Red,
+                );
+                Ok(())
+            }
+        }
     }
 
     fn submit(&mut self) -> Result<(), String> {
@@ -361,6 +593,7 @@ impl<'a> RepoManager<'a> {
 
                 self.repos.push(RepoDefinition::new(input_value));
                 self.persist()?;
+                self.recompute_refresh_interval();
                 self.list_state.select(Some(self.repos.len() - 1));
                 self.set_message("Repositorio añadido", Color::Green);
                 self.input_mode = InputMode::Normal;
@@ -381,6 +614,7 @@ impl<'a> RepoManager<'a> {
                     repo.repo_path = input_value;
                 }
                 self.persist()?;
+                self.recompute_refresh_interval();
                 self.set_message("Repositorio actualizado", Color::Green);
                 self.input_mode = InputMode::Normal;
                 self.input.clear();
@@ -451,6 +685,7 @@ fn run_loop(
     sync_interval: u64,
 ) -> Result<(), String> {
     let mut manager = RepoManager::new(config, sync_interval);
+    manager.refresh_all_status();
 
     loop {
         manager.tick();
@@ -481,6 +716,8 @@ fn run_loop(
                     KeyCode::Char('c') => manager.start_edit_post_command(),
                     KeyCode::Char('d') => manager.delete_selected()?,
                     KeyCode::Char('s') => manager.toggle_selected_sync()?,
+                    KeyCode::Char('u') => manager.sync_selected_now()?,
+                    KeyCode::Char('U') => manager.sync_all_now()?,
                     KeyCode::Char(' ') => manager.toggle_details(),
                     KeyCode::Down => manager.select_next(),
                     KeyCode::Up => manager.select_previous(),
@@ -522,7 +759,6 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         )
         .split(size);
 
-    let remaining = manager.seconds_until_next_sync();
     let header = Paragraph::new(Line::from(vec![
         Span::styled(
             " Git Sync ",
@@ -540,7 +776,10 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         ),
         Span::raw("  |  "),
         Span::styled(
-            format!("Próximo ciclo: {}s", remaining),
+            format!(
+                "Refresh auto secuencial ~{:.1}s/repo | Pull: u/U",
+                manager.refresh_step_interval.as_millis() as f64 / 1000.0
+            ),
             Style::default().fg(Color::Green),
         ),
         Span::raw("  |  "),
@@ -571,17 +810,29 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
             .map(|(i, repo)| {
                 let base_style = Style::default().fg(Color::White);
                 let state = manager.sync_state.get(&repo.repo_path);
-                let (status_label, status_style) = match state {
+                let refresh = manager.refresh_status.get(&repo.repo_path);
+                let (status_label, status_style) = match (repo.enabled, refresh, state) {
                     _ if !repo.enabled => (
                         " PAUSADO ",
                         Style::default().fg(Color::Black).bg(Color::Yellow),
                     ),
-                    Some(repo_state) if repo_has_active_error(repo_state) => {
+                    (true, Some(remote), _) if remote.last_error.is_some() => (
+                        " ERROR REFRESH ",
+                        Style::default().fg(Color::White).bg(Color::Red),
+                    ),
+                    (true, Some(remote), _) if remote.commits_behind.unwrap_or(0) > 0 => (
+                        " DESACTUALIZADO ",
+                        Style::default().fg(Color::Black).bg(Color::Yellow),
+                    ),
+                    (true, _, Some(repo_state)) if repo_has_active_error(repo_state) => {
                         (" ERROR ", Style::default().fg(Color::White).bg(Color::Red))
                     }
-                    Some(_) => (" OK ", Style::default().fg(Color::Black).bg(Color::Green)),
-                    None => (
-                        " SIN DATOS ",
+                    (true, Some(_), _) => (
+                        " ACTUALIZADO ",
+                        Style::default().fg(Color::Black).bg(Color::Green),
+                    ),
+                    _ => (
+                        " SIN REFRESH ",
                         Style::default().fg(Color::Black).bg(Color::DarkGray),
                     ),
                 };
@@ -589,8 +840,13 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                     .and_then(|s| s.last_success_ts)
                     .map(|ts| format!("hace {}", humanize_elapsed(now_ts.saturating_sub(ts))))
                     .unwrap_or_else(|| "sin registros".to_string());
-                let branch_label = state
-                    .and_then(|s| s.last_branch.clone())
+                let branch_label = refresh
+                    .and_then(|s| s.branch.clone())
+                    .or_else(|| state.and_then(|s| s.last_branch.clone()))
+                    .unwrap_or_else(|| "?".to_string());
+                let behind_label = refresh
+                    .and_then(|s| s.commits_behind)
+                    .map(|count| count.to_string())
                     .unwrap_or_else(|| "?".to_string());
                 let command_label = if repo
                     .post_sync_command
@@ -613,8 +869,8 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                     Span::raw("  | "),
                     Span::styled(status_label, status_style),
                     Span::raw(format!(
-                        "  |  Rama: {}  |  Cmd: {}  |  Últ. sync: {}",
-                        branch_label, command_label, last_sync_label
+                        "  |  Rama: {}  |  Behind: {}  |  Cmd: {}  |  Últ. sync: {}",
+                        branch_label, behind_label, command_label, last_sync_label
                     )),
                 ]);
                 ListItem::new(label)
@@ -638,7 +894,9 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
 
     let error_count = manager.error_count();
     let paused_count = manager.paused_count();
+    let outdated_count = manager.outdated_count();
     let selected_state = manager.selected_repo_state();
+    let selected_refresh = manager.selected_refresh_status();
     let selected_last_sync = selected_state
         .and_then(|state| state.last_success_ts)
         .map(|ts| format!("hace {}", humanize_elapsed(now_ts.saturating_sub(ts))))
@@ -647,10 +905,12 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         .and_then(|state| state.last_attempt_ts)
         .map(|ts| format!("hace {}", humanize_elapsed(now_ts.saturating_sub(ts))))
         .unwrap_or_else(|| "sin intentos".to_string());
-    let selected_status = match selected_state {
-        Some(state) if repo_has_active_error(state) => "Error en último intento",
-        Some(_) => "Correcto",
-        None => "Sin datos",
+    let selected_status = match (selected_refresh, selected_state) {
+        (Some(remote), _) if remote.last_error.is_some() => "Error en refresh remoto",
+        (Some(remote), _) if remote.commits_behind.unwrap_or(0) > 0 => "Desactualizado",
+        (_, Some(state)) if repo_has_active_error(state) => "Error en último intento",
+        (Some(_), Some(_)) | (Some(_), None) => "Correcto",
+        _ => "Sin refresh",
     };
     let selected_error = selected_state
         .and_then(|state| state.last_error.clone())
@@ -660,8 +920,21 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         .and_then(|state| state.last_result.clone())
         .map(|result| truncate_message(&result, 72))
         .unwrap_or_else(|| "-".to_string());
-    let selected_branch = selected_state
-        .and_then(|state| state.last_branch.clone())
+    let selected_branch = selected_refresh
+        .and_then(|state| state.branch.clone())
+        .or_else(|| selected_state.and_then(|state| state.last_branch.clone()))
+        .unwrap_or_else(|| "-".to_string());
+    let selected_behind = selected_refresh
+        .and_then(|state| state.commits_behind)
+        .map(|count| count.to_string())
+        .unwrap_or_else(|| "-".to_string());
+    let selected_refresh_at = selected_refresh
+        .and_then(|state| state.last_refresh_ts)
+        .map(|ts| format!("hace {}", humanize_elapsed(now_ts.saturating_sub(ts))))
+        .unwrap_or_else(|| "-".to_string());
+    let selected_refresh_error = selected_refresh
+        .and_then(|state| state.last_error.clone())
+        .map(|value| truncate_message(&value, 72))
         .unwrap_or_else(|| "-".to_string());
     let selected_command = manager
         .selected_repo()
@@ -686,16 +959,20 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         )]),
         Line::from(format!("Total: {}", manager.repos.len())),
         Line::from(format!("Pausados: {}", paused_count)),
+        Line::from(format!("Desactualizados: {}", outdated_count)),
         Line::from(format!("Con error: {}", error_count)),
         Line::from(""),
         Line::from(vec![Span::styled(
-            "Daemon",
+            "Sincronización",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         )]),
-        Line::from(format!("Intervalo: {}s", manager.sync_interval)),
-        Line::from(format!("Próximo ciclo: {}s", remaining)),
+        Line::from(format!(
+            "Refresh auto secuencial: ~{:.1}s/repo",
+            manager.refresh_step_interval.as_millis() as f64 / 1000.0
+        )),
+        Line::from("Acción rápida: u/U"),
         Line::from(format!("Fecha: {}", Local::now().format("%Y-%m-%d"))),
         Line::from(""),
         Line::from(vec![Span::styled(
@@ -713,6 +990,9 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                 "Desactivado"
             }
         )),
+        Line::from(format!("Commits behind: {}", selected_behind)),
+        Line::from(format!("Último refresh: {}", selected_refresh_at)),
+        Line::from(format!("Error refresh: {}", selected_refresh_error)),
         Line::from(format!("Comando post-sync: {}", selected_command)),
         Line::from(format!("Estado: {}", selected_status)),
         Line::from(format!("Último resultado: {}", selected_result)),
@@ -831,6 +1111,14 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" activar/pausar  "),
+        Span::styled(
+            " U/u ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" sincronizar  "),
         Span::styled(
             " Espacio ",
             Style::default()
