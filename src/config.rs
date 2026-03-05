@@ -8,6 +8,7 @@ use std::path::Path;
 pub struct RepoDefinition {
     pub repo_path: String,
     pub enabled: bool,
+    pub post_sync_command: Option<String>,
 }
 
 impl RepoDefinition {
@@ -16,6 +17,7 @@ impl RepoDefinition {
         RepoDefinition {
             repo_path,
             enabled: true,
+            post_sync_command: None,
         }
     }
 
@@ -31,6 +33,19 @@ impl RepoDefinition {
             (true, trimmed)
         };
 
+        let (raw_path, post_sync_command) =
+            if let Some((path_part, command_part)) = raw_path.split_once(";;") {
+                let command = command_part.trim();
+                let post_sync_command = if command.is_empty() {
+                    None
+                } else {
+                    Some(command.to_string())
+                };
+                (path_part.trim(), post_sync_command)
+            } else {
+                (raw_path, None)
+            };
+
         if let Some((source, target)) = raw_path.split_once("=>") {
             let source = source.trim();
             if source.is_empty() {
@@ -44,19 +59,28 @@ impl RepoDefinition {
             }
             let mut repo = RepoDefinition::new(source.to_string());
             repo.enabled = enabled;
+            repo.post_sync_command = post_sync_command;
             Some(repo)
         } else {
             let mut repo = RepoDefinition::new(raw_path.to_string());
             repo.enabled = enabled;
+            repo.post_sync_command = post_sync_command;
             Some(repo)
         }
     }
 
     pub fn to_line(&self) -> String {
-        if self.enabled {
+        let base = if self.enabled {
             self.repo_path.trim().to_string()
         } else {
             format!("! {}", self.repo_path.trim())
+        };
+
+        match &self.post_sync_command {
+            Some(command) if !command.trim().is_empty() => {
+                format!("{} ;; {}", base, command.trim())
+            }
+            _ => base,
         }
     }
 }
@@ -127,6 +151,7 @@ impl Config {
             let default_content = "# Añada rutas absolutas de repositorios Git, una por línea\n\
                                     # Use rutas locales del servidor (no URLs de GitHub/GitLab)\n\
                                     # Para desactivar un repo temporalmente, use prefijo !\n\
+                                    # Para ejecutar comandos tras un pull use: /ruta ;; comando\n\
                                     # Ejemplo:\n\
                                     # /var/www/html/mi-app\n";
             fs::write(&self.repos_file, default_content).map_err(|e| {
@@ -254,6 +279,7 @@ impl Config {
         let mut content = String::from("# Lista de repositorios administrada por git-sync\n");
         content.push_str("# Especifique una ruta absoluta por línea (ruta local, no URL remota)\n");
         content.push_str("# Para desactivar un repo temporalmente use: ! /ruta/al/repo\n");
+        content.push_str("# Para comando post-sync use: /ruta/al/repo ;; comando\n");
         content.push_str("# Ejemplo:\n");
         content.push_str("#   /var/www/html/mi-app\n");
         for repo in repos {
