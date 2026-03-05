@@ -84,10 +84,14 @@ Formato soportado:
 
 # Desactivar temporalmente el sync para un repo
 ! /home/deploy/repos/mi-api-pausada
+
+# Ejecutar comando post-sync tras pull con cambios
+/home/deploy/repos/mi-api ;; php artisan config:clear
 ```
 
 - Cada línea debe contener la ruta absoluta a un repositorio Git válido ya clonado en el servidor.
 - Prefijo `!` = repositorio pausado (no se sincroniza hasta volver a activarlo).
+- Separador `;;` = comando post-sync (se ejecuta solo cuando hubo `git pull` con cambios).
 - Entradas con formato antiguo `origen => destino` se leen, pero el destino se ignora.
 
 Puedes editar el archivo a mano o usar la TUI (`sudo git-sync`) para que el formato se mantenga sin errores.
@@ -98,11 +102,11 @@ Puedes editar el archivo a mano o usar la TUI (`sudo git-sync`) para que el form
 
 Ejecuta `sudo git-sync` (sin argumentos) para abrir la consola interactiva:
 
-- `↑/↓` navegar, `Enter` o `e` editar, `a` añadir, `d` eliminar, `s` activar/pausar sync, `Espacio` ver detalles, `q/Esc` salir.
+- `↑/↓` navegar, `Enter` o `e` editar, `a` añadir, `d` eliminar, `s` activar/pausar sync, `c` comando post-sync, `Espacio` ver detalles, `q/Esc` salir.
 - Al añadir un repositorio:
   1. Ingresas la ruta absoluta al directorio del repositorio **ya clonado** (no la URL remota).
 - Los mensajes de estado aparecen en la parte inferior con colores y emojis.
-- La vista de detalles muestra rama detectada, último commit aplicado por pull, último error y últimos commits locales.
+- La vista de detalles muestra rama detectada, comando post-sync configurado, último commit aplicado por pull, último error y últimos commits locales.
 
 ---
 

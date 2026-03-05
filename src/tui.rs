@@ -23,6 +23,7 @@ enum InputMode {
     Normal,
     AddingSource,
     EditingSource(usize),
+    EditingPostCommand(usize),
 }
 
 pub fn run_repo_manager(config: &Config, sync_interval: u64) -> Result<(), String> {
@@ -193,6 +194,10 @@ impl<'a> RepoManager<'a> {
             .selected_repo()
             .map(|repo| repo.enabled)
             .unwrap_or(true);
+        let repo_command = self
+            .selected_repo()
+            .and_then(|repo| repo.post_sync_command.clone())
+            .unwrap_or_else(|| "-".to_string());
 
         self.details_repo_path = Some(repo_path.clone());
         self.details_lines
@@ -205,6 +210,8 @@ impl<'a> RepoManager<'a> {
                 "Desactivado"
             }
         ));
+        self.details_lines
+            .push(format!("Comando post-sync: {}", repo_command));
 
         let state = self.sync_state.get(&repo_path);
         let branch = state
@@ -281,6 +288,19 @@ impl<'a> RepoManager<'a> {
             self.input = repo.repo_path.clone();
             self.set_message(
                 "Edita la ruta local del repositorio seleccionado",
+                Color::Cyan,
+            );
+        }
+    }
+
+    fn start_edit_post_command(&mut self) {
+        if let Some(index) = self.list_state.selected()
+            && let Some(repo) = self.repos.get(index)
+        {
+            self.input_mode = InputMode::EditingPostCommand(index);
+            self.input = repo.post_sync_command.clone().unwrap_or_default();
+            self.set_message(
+                "Comando post-sync (vacío para desactivar). Se ejecuta solo tras pull con cambios",
                 Color::Cyan,
             );
         }
@@ -365,6 +385,28 @@ impl<'a> RepoManager<'a> {
                 self.input_mode = InputMode::Normal;
                 self.input.clear();
             }
+            InputMode::EditingPostCommand(index) => {
+                if index >= self.repos.len() {
+                    self.set_message("No se encontró el repositorio seleccionado", Color::Red);
+                    self.cancel_input();
+                    return Ok(());
+                }
+
+                let command = if input_value.is_empty() {
+                    None
+                } else {
+                    Some(input_value)
+                };
+
+                if let Some(repo) = self.repos.get_mut(index) {
+                    repo.post_sync_command = command;
+                }
+
+                self.persist()?;
+                self.set_message("Comando post-sync actualizado", Color::Green);
+                self.input_mode = InputMode::Normal;
+                self.input.clear();
+            }
             InputMode::Normal => {}
         }
 
@@ -398,6 +440,7 @@ impl<'a> RepoManager<'a> {
             InputMode::Normal => "Normal",
             InputMode::AddingSource => "Agregar",
             InputMode::EditingSource(_) => "Editar",
+            InputMode::EditingPostCommand(_) => "Comando",
         }
     }
 }
@@ -435,6 +478,7 @@ fn run_loop(
                     KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
                     KeyCode::Char('a') => manager.start_add(),
                     KeyCode::Char('e') | KeyCode::Enter => manager.start_edit(),
+                    KeyCode::Char('c') => manager.start_edit_post_command(),
                     KeyCode::Char('d') => manager.delete_selected()?,
                     KeyCode::Char('s') => manager.toggle_selected_sync()?,
                     KeyCode::Char(' ') => manager.toggle_details(),
@@ -442,7 +486,9 @@ fn run_loop(
                     KeyCode::Up => manager.select_previous(),
                     _ => {}
                 },
-                InputMode::AddingSource | InputMode::EditingSource(_) => match code {
+                InputMode::AddingSource
+                | InputMode::EditingSource(_)
+                | InputMode::EditingPostCommand(_) => match code {
                     KeyCode::Enter => manager.submit()?,
                     KeyCode::Esc => manager.cancel_input(),
                     KeyCode::Backspace => manager.backspace(),
@@ -546,6 +592,16 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                 let branch_label = state
                     .and_then(|s| s.last_branch.clone())
                     .unwrap_or_else(|| "?".to_string());
+                let command_label = if repo
+                    .post_sync_command
+                    .as_ref()
+                    .map(|cmd| !cmd.trim().is_empty())
+                    .unwrap_or(false)
+                {
+                    "sí"
+                } else {
+                    "no"
+                };
 
                 let label = Line::from(vec![
                     Span::styled(
@@ -557,8 +613,8 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                     Span::raw("  | "),
                     Span::styled(status_label, status_style),
                     Span::raw(format!(
-                        "  |  Rama: {}  |  Últ. sync: {}",
-                        branch_label, last_sync_label
+                        "  |  Rama: {}  |  Cmd: {}  |  Últ. sync: {}",
+                        branch_label, command_label, last_sync_label
                     )),
                 ]);
                 ListItem::new(label)
@@ -607,6 +663,11 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
     let selected_branch = selected_state
         .and_then(|state| state.last_branch.clone())
         .unwrap_or_else(|| "-".to_string());
+    let selected_command = manager
+        .selected_repo()
+        .and_then(|repo| repo.post_sync_command.clone())
+        .map(|cmd| truncate_message(&cmd, 72))
+        .unwrap_or_else(|| "-".to_string());
     let selected_repo_enabled = manager
         .selected_repo()
         .map(|repo| repo.enabled)
@@ -652,6 +713,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                 "Desactivado"
             }
         )),
+        Line::from(format!("Comando post-sync: {}", selected_command)),
         Line::from(format!("Estado: {}", selected_status)),
         Line::from(format!("Último resultado: {}", selected_result)),
         Line::from(format!("Último commit pull: {}", selected_pulled_commit)),
@@ -690,6 +752,10 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
             manager.input.clone(),
             "Ruta del repositorio (ej. /var/www/html/mi-app)",
         ),
+        InputMode::EditingPostCommand(_) => (
+            manager.input.clone(),
+            "Comando post-sync (ej. php artisan config:clear)",
+        ),
     };
 
     let input_block = Paragraph::new(input_text)
@@ -699,7 +765,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
 
     if matches!(
         manager.input_mode,
-        InputMode::AddingSource | InputMode::EditingSource(_)
+        InputMode::AddingSource | InputMode::EditingSource(_) | InputMode::EditingPostCommand(_)
     ) {
         frame.set_cursor(
             chunks[3].x + manager.input.len() as u16 + 1,
@@ -749,6 +815,14 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" eliminar  "),
+        Span::styled(
+            " C ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" comando  "),
         Span::styled(
             " S ",
             Style::default()
