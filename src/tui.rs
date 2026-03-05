@@ -26,7 +26,6 @@ enum InputMode {
     Normal,
     AddingSource,
     EditingSource(usize),
-    EditingPostCommand(usize),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -331,10 +330,6 @@ impl<'a> RepoManager<'a> {
             .selected_repo()
             .map(|repo| repo.enabled)
             .unwrap_or(true);
-        let repo_command = self
-            .selected_repo()
-            .and_then(|repo| repo.post_sync_command.clone())
-            .unwrap_or_else(|| "-".to_string());
 
         self.details_repo_path = Some(repo_path.clone());
         self.details_lines
@@ -347,8 +342,6 @@ impl<'a> RepoManager<'a> {
                 "Desactivado"
             }
         ));
-        self.details_lines
-            .push(format!("Comando post-sync: {}", repo_command));
 
         let state = self.sync_state.get(&repo_path);
         let refresh = self.refresh_status.get(&repo_path);
@@ -456,19 +449,6 @@ impl<'a> RepoManager<'a> {
         }
     }
 
-    fn start_edit_post_command(&mut self) {
-        if let Some(index) = self.list_state.selected()
-            && let Some(repo) = self.repos.get(index)
-        {
-            self.input_mode = InputMode::EditingPostCommand(index);
-            self.input = repo.post_sync_command.clone().unwrap_or_default();
-            self.set_message(
-                "Comando post-sync (vacío para desactivar). Se ejecuta solo tras pull con cambios",
-                Color::Cyan,
-            );
-        }
-    }
-
     fn delete_selected(&mut self) -> Result<(), String> {
         if let Some(index) = self.list_state.selected()
             && index < self.repos.len()
@@ -550,6 +530,10 @@ impl<'a> RepoManager<'a> {
         self.run_sync_now(repos, "Sincronización manual completada")
     }
 
+    fn selected_repo_path(&self) -> Option<String> {
+        self.selected_repo().map(|repo| repo.repo_path.clone())
+    }
+
     fn run_sync_now(
         &mut self,
         repos: Vec<RepoDefinition>,
@@ -619,28 +603,6 @@ impl<'a> RepoManager<'a> {
                 self.input_mode = InputMode::Normal;
                 self.input.clear();
             }
-            InputMode::EditingPostCommand(index) => {
-                if index >= self.repos.len() {
-                    self.set_message("No se encontró el repositorio seleccionado", Color::Red);
-                    self.cancel_input();
-                    return Ok(());
-                }
-
-                let command = if input_value.is_empty() {
-                    None
-                } else {
-                    Some(input_value)
-                };
-
-                if let Some(repo) = self.repos.get_mut(index) {
-                    repo.post_sync_command = command;
-                }
-
-                self.persist()?;
-                self.set_message("Comando post-sync actualizado", Color::Green);
-                self.input_mode = InputMode::Normal;
-                self.input.clear();
-            }
             InputMode::Normal => {}
         }
 
@@ -674,7 +636,6 @@ impl<'a> RepoManager<'a> {
             InputMode::Normal => "Normal",
             InputMode::AddingSource => "Agregar",
             InputMode::EditingSource(_) => "Editar",
-            InputMode::EditingPostCommand(_) => "Comando",
         }
     }
 }
@@ -713,19 +674,27 @@ fn run_loop(
                     KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
                     KeyCode::Char('a') => manager.start_add(),
                     KeyCode::Char('e') | KeyCode::Enter => manager.start_edit(),
-                    KeyCode::Char('c') => manager.start_edit_post_command(),
                     KeyCode::Char('d') => manager.delete_selected()?,
                     KeyCode::Char('s') => manager.toggle_selected_sync()?,
                     KeyCode::Char('u') => manager.sync_selected_now()?,
                     KeyCode::Char('U') => manager.sync_all_now()?,
+                    KeyCode::Char('v') => {
+                        if let Some(path) = manager.selected_repo_path() {
+                            open_shell_in_repo(terminal, &path)?;
+                            manager.set_message(
+                                "Sesión de shell finalizada. Regresaste a git-sync.",
+                                Color::Green,
+                            );
+                        } else {
+                            manager.set_message("No hay repositorio seleccionado", Color::Yellow);
+                        }
+                    }
                     KeyCode::Char(' ') => manager.toggle_details(),
                     KeyCode::Down => manager.select_next(),
                     KeyCode::Up => manager.select_previous(),
                     _ => {}
                 },
-                InputMode::AddingSource
-                | InputMode::EditingSource(_)
-                | InputMode::EditingPostCommand(_) => match code {
+                InputMode::AddingSource | InputMode::EditingSource(_) => match code {
                     KeyCode::Enter => manager.submit()?,
                     KeyCode::Esc => manager.cancel_input(),
                     KeyCode::Backspace => manager.backspace(),
@@ -735,6 +704,39 @@ fn run_loop(
                 },
             }
         }
+    }
+}
+
+fn open_shell_in_repo(
+    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    repo_path: &str,
+) -> Result<(), String> {
+    if !Path::new(repo_path).exists() {
+        return Err(format!("La ruta no existe: {}", repo_path));
+    }
+
+    disable_raw_mode().map_err(|e| format!("No se pudo salir de modo raw: {}", e))?;
+    terminal
+        .backend_mut()
+        .execute(LeaveAlternateScreen)
+        .map_err(|e| format!("No se pudo salir de la pantalla alternativa: {}", e))?;
+
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+    let shell_result = std::process::Command::new(&shell)
+        .current_dir(repo_path)
+        .status()
+        .map_err(|e| format!("No se pudo abrir shell en {}: {}", repo_path, e));
+
+    terminal
+        .backend_mut()
+        .execute(EnterAlternateScreen)
+        .map_err(|e| format!("No se pudo restaurar pantalla alternativa: {}", e))?;
+    enable_raw_mode().map_err(|e| format!("No se pudo reactivar modo raw: {}", e))?;
+
+    match shell_result {
+        Ok(status) if status.success() => Ok(()),
+        Ok(_) => Err("La sesión de shell terminó con error".to_string()),
+        Err(err) => Err(err),
     }
 }
 
@@ -848,17 +850,6 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                     .and_then(|s| s.commits_behind)
                     .map(|count| count.to_string())
                     .unwrap_or_else(|| "?".to_string());
-                let command_label = if repo
-                    .post_sync_command
-                    .as_ref()
-                    .map(|cmd| !cmd.trim().is_empty())
-                    .unwrap_or(false)
-                {
-                    "sí"
-                } else {
-                    "no"
-                };
-
                 let label = Line::from(vec![
                     Span::styled(
                         format!("{:>2}. ", i + 1),
@@ -869,8 +860,8 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
                     Span::raw("  | "),
                     Span::styled(status_label, status_style),
                     Span::raw(format!(
-                        "  |  Rama: {}  |  Behind: {}  |  Cmd: {}  |  Últ. sync: {}",
-                        branch_label, behind_label, command_label, last_sync_label
+                        "  |  Rama: {}  |  Behind: {}  |  Últ. sync: {}",
+                        branch_label, behind_label, last_sync_label
                     )),
                 ]);
                 ListItem::new(label)
@@ -936,11 +927,6 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         .and_then(|state| state.last_error.clone())
         .map(|value| truncate_message(&value, 72))
         .unwrap_or_else(|| "-".to_string());
-    let selected_command = manager
-        .selected_repo()
-        .and_then(|repo| repo.post_sync_command.clone())
-        .map(|cmd| truncate_message(&cmd, 72))
-        .unwrap_or_else(|| "-".to_string());
     let selected_repo_enabled = manager
         .selected_repo()
         .map(|repo| repo.enabled)
@@ -993,7 +979,6 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         Line::from(format!("Commits behind: {}", selected_behind)),
         Line::from(format!("Último refresh: {}", selected_refresh_at)),
         Line::from(format!("Error refresh: {}", selected_refresh_error)),
-        Line::from(format!("Comando post-sync: {}", selected_command)),
         Line::from(format!("Estado: {}", selected_status)),
         Line::from(format!("Último resultado: {}", selected_result)),
         Line::from(format!("Último commit pull: {}", selected_pulled_commit)),
@@ -1032,10 +1017,6 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
             manager.input.clone(),
             "Ruta del repositorio (ej. /var/www/html/mi-app)",
         ),
-        InputMode::EditingPostCommand(_) => (
-            manager.input.clone(),
-            "Comando post-sync (ej. php artisan config:clear)",
-        ),
     };
 
     let input_block = Paragraph::new(input_text)
@@ -1045,7 +1026,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
 
     if matches!(
         manager.input_mode,
-        InputMode::AddingSource | InputMode::EditingSource(_) | InputMode::EditingPostCommand(_)
+        InputMode::AddingSource | InputMode::EditingSource(_)
     ) {
         frame.set_cursor(
             chunks[3].x + manager.input.len() as u16 + 1,
@@ -1096,13 +1077,13 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         ),
         Span::raw(" eliminar  "),
         Span::styled(
-            " C ",
+            " V ",
             Style::default()
                 .fg(Color::Black)
                 .bg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::raw(" comando  "),
+        Span::raw(" visitar ruta  "),
         Span::styled(
             " S ",
             Style::default()
