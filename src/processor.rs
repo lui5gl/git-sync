@@ -1,17 +1,23 @@
 use crate::config::RepoDefinition;
 use crate::git::GitRepo;
 use crate::logger::Logger;
+use crate::sync_state::SyncStateSnapshot;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 pub struct RepoProcessor<'a> {
     logger: &'a Logger,
     verbose: bool,
+    state_file: String,
 }
 
 impl<'a> RepoProcessor<'a> {
-    pub fn new(logger: &'a Logger, verbose: bool) -> Self {
-        RepoProcessor { logger, verbose }
+    pub fn new(logger: &'a Logger, verbose: bool, state_file: String) -> Self {
+        RepoProcessor {
+            logger,
+            verbose,
+            state_file,
+        }
     }
 
     pub fn process_all(&self, repo_defs: Vec<RepoDefinition>) -> Result<(), String> {
@@ -30,16 +36,21 @@ impl<'a> RepoProcessor<'a> {
             ));
         }
 
+        let mut sync_state = SyncStateSnapshot::load(&self.state_file);
         let mut errors: Vec<(String, String)> = Vec::new();
 
         for repo in repo_defs {
+            sync_state.mark_attempt(&repo.repo_path);
+
             match self.process_single(&repo) {
-                Ok(_) => {
+                Ok(result) => {
+                    sync_state.mark_success(&repo.repo_path, result);
                     if self.verbose {
                         self.logger.log("\n");
                     }
                 }
                 Err(err) => {
+                    sync_state.mark_error(&repo.repo_path, err.clone());
                     errors.push((repo.repo_path.clone(), err.clone()));
                     self.logger.log_line(&format!(
                         "⚠️ Repositorio omitido {} debido a un error: {}",
@@ -47,6 +58,13 @@ impl<'a> RepoProcessor<'a> {
                     ));
                 }
             }
+        }
+
+        if let Err(state_err) = sync_state.save(&self.state_file) {
+            self.logger.log_line(&format!(
+                "⚠️ No se pudo actualizar el archivo de estado de sincronización: {}",
+                state_err
+            ));
         }
 
         if self.verbose {
@@ -70,7 +88,7 @@ impl<'a> RepoProcessor<'a> {
         }
     }
 
-    fn process_single(&self, repo: &RepoDefinition) -> Result<(), String> {
+    fn process_single(&self, repo: &RepoDefinition) -> Result<String, String> {
         if self.verbose {
             self.logger
                 .log_line("==========================================");
@@ -89,13 +107,14 @@ impl<'a> RepoProcessor<'a> {
 
         self.validate_repo(&repo.repo_path)?;
 
-        self.check_and_pull(&repo.repo_path)?;
+        let sync_result = self.check_and_pull(&repo.repo_path)?;
 
         if let Some(target) = &repo.deploy_target {
             self.build_and_deploy(&repo.repo_path, target)?;
+            return Ok(format!("{} + build/deploy correcto", sync_result));
         }
 
-        Ok(())
+        Ok(sync_result)
     }
 
     fn validate_repo(&self, repo_path: &str) -> Result<(), String> {
@@ -117,7 +136,7 @@ impl<'a> RepoProcessor<'a> {
         Ok(())
     }
 
-    fn check_and_pull(&self, repo_path: &str) -> Result<(), String> {
+    fn check_and_pull(&self, repo_path: &str) -> Result<String, String> {
         let repo = GitRepo::new(repo_path.to_string());
 
         if self.verbose {
@@ -146,6 +165,7 @@ impl<'a> RepoProcessor<'a> {
                     self.logger
                         .log_line("✅ El repositorio ya está actualizado.");
                 }
+                Ok("Sin cambios remotos".to_string())
             }
             Ok(count) => {
                 if self.verbose {
@@ -163,22 +183,21 @@ impl<'a> RepoProcessor<'a> {
                                 output.trim()
                             ));
                         }
+                        Ok(format!("Pull aplicado: {} commit(s)", count))
                     }
                     Err(e) => {
                         let msg = format!("❌ No se pudo ejecutar `git pull`: {}", e);
                         self.logger.log_error(&msg);
-                        return Err(msg);
+                        Err(msg)
                     }
                 }
             }
             Err(e) => {
                 let msg = format!("❌ No se pudo consultar el estado del repositorio: {}", e);
                 self.logger.log_error(&msg);
-                return Err(msg);
+                Err(msg)
             }
         }
-
-        Ok(())
     }
 
     fn build_and_deploy(&self, repo_path: &str, destination: &str) -> Result<(), String> {

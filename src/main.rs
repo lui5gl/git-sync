@@ -4,6 +4,7 @@ mod logger;
 mod processor;
 mod service;
 mod settings;
+mod sync_state;
 mod tui;
 
 use config::{Config, RepoDefinition};
@@ -206,7 +207,7 @@ fn run_daemon(config: Config) {
 
 fn run_sync_cycle(config: &Config, logger: &Logger, settings: &Settings) {
     let repos = config.read_repos();
-    let processor = RepoProcessor::new(logger, settings.verbose);
+    let processor = RepoProcessor::new(logger, settings.verbose, config.state_file.clone());
 
     match processor.process_all(repos) {
         Ok(_) => {
@@ -241,7 +242,10 @@ fn update_self() -> Result<(), String> {
     let latest_tag = fetch_latest_release_tag()?;
     install_release(&latest_tag)?;
 
-    println!("\n✅ ¡git-sync se actualizó correctamente a {}!", latest_tag);
+    println!(
+        "\n✅ ¡git-sync se actualizó correctamente a {}!",
+        latest_tag
+    );
     println!("👉 Reinicie el servicio: `sudo systemctl restart git-sync`.");
     Ok(())
 }
@@ -444,12 +448,18 @@ fn add_current_repo_prompt(config: &Config) -> Result<(), String> {
 
     let mut repos = config.read_repos();
     if repos.iter().any(|r| r.repo_path == repo_path) {
-        println!("ℹ️ El repositorio ya está registrado en {}", config.repos_file);
+        println!(
+            "ℹ️ El repositorio ya está registrado en {}",
+            config.repos_file
+        );
         return Ok(());
     }
 
     repos.push(RepoDefinition::new(repo_path, Option::<String>::None));
     config.write_repos(&repos)?;
-    println!("✅ Repositorio agregado correctamente en {}", config.repos_file);
+    println!(
+        "✅ Repositorio agregado correctamente en {}",
+        config.repos_file
+    );
     Ok(())
 }

@@ -1,4 +1,5 @@
 use crate::settings::Settings;
+use crate::sync_state::SyncStateSnapshot;
 use std::fs::{self, File};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -64,6 +65,7 @@ pub struct Config {
     pub settings_file: String,
     pub log_dir: String,
     pub log_file: String,
+    pub state_file: String,
 }
 
 impl Config {
@@ -73,6 +75,7 @@ impl Config {
         let repos_file = format!("{}/repositories.txt", config_dir);
         let settings_file = format!("{}/config.toml", config_dir);
         let log_file = format!("{}/git-sync.log", log_dir);
+        let state_file = format!("{}/state.toml", log_dir);
 
         Config {
             config_dir,
@@ -80,6 +83,7 @@ impl Config {
             settings_file,
             log_dir,
             log_file,
+            state_file,
         }
     }
 
@@ -90,6 +94,7 @@ impl Config {
         let repos_created = self.ensure_repos_file()?;
         self.ensure_settings_file()?;
         self.ensure_log_file()?;
+        self.ensure_state_file()?;
 
         if repos_created {
             println!(
@@ -195,6 +200,37 @@ impl Config {
             })?;
 
             println!("📝 Archivo de registro creado: {}", self.log_file);
+        }
+
+        Ok(())
+    }
+
+    fn ensure_state_file(&self) -> Result<(), String> {
+        if !Path::new(&self.state_file).exists() {
+            let default_state = SyncStateSnapshot::default();
+            let content = toml::to_string_pretty(&default_state).map_err(|e| {
+                format!(
+                    "❌ No se pudo serializar el estado inicial de sincronización: {}",
+                    e
+                )
+            })?;
+
+            fs::write(&self.state_file, content).map_err(|e| {
+                format!(
+                    "❌ No se pudo crear el archivo de estado {}: {}",
+                    self.state_file, e
+                )
+            })?;
+
+            let permissions = fs::Permissions::from_mode(0o644);
+            fs::set_permissions(&self.state_file, permissions).map_err(|e| {
+                format!(
+                    "❌ No se pudieron asignar permisos a {}: {}",
+                    self.state_file, e
+                )
+            })?;
+
+            println!("📊 Archivo de estado creado: {}", self.state_file);
         }
 
         Ok(())

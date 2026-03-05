@@ -37,6 +37,7 @@ pub fn install_service() -> Result<(), String> {
 
     chown_path(&config.log_dir, &username)?;
     chown_path(&config.log_file, &username)?;
+    chown_path(&config.state_file, &username)?;
 
     let service_content = format!(
         "[Unit]\nDescription=Daemon de sincronización de Git Sync\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nUser={username}\nWorkingDirectory={home_dir}\nEnvironment=HOME={home_dir}\nExecStart={exec_display} daemon\nRestart=on-failure\nRestartSec=60\n\n[Install]\nWantedBy=multi-user.target\n"

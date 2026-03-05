@@ -1,35 +1,29 @@
 use crate::config::{Config, RepoDefinition};
+use crate::sync_state::{RepoSyncState, SyncStateSnapshot};
 use chrono::Local;
+use crossterm::ExecutableCommand;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use crossterm::ExecutableCommand;
+use ratatui::Frame;
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
-use ratatui::Frame;
-use ratatui::Terminal;
-use std::io::{stdout, Stdout};
+use std::io::{Stdout, stdout};
 use std::time::{Duration, Instant};
 
 #[derive(Clone)]
 enum InputMode {
     Normal,
     ChoosingBuildType,
-    AddingSource {
-        requires_build: bool,
-    },
-    AddingDestination {
-        source: String,
-    },
+    AddingSource { requires_build: bool },
+    AddingDestination { source: String },
     EditingSource(usize),
-    EditingDestination {
-        index: usize,
-        source: String,
-    },
+    EditingDestination { index: usize, source: String },
 }
 
 pub fn run_repo_manager(config: &Config, sync_interval: u64) -> Result<(), String> {
@@ -67,6 +61,7 @@ struct RepoManager<'a> {
     message: Option<(String, Color)>,
     sync_interval: u64,
     next_sync_deadline: Instant,
+    sync_state: SyncStateSnapshot,
 }
 
 impl<'a> RepoManager<'a> {
@@ -88,6 +83,7 @@ impl<'a> RepoManager<'a> {
             message: None,
             sync_interval: safe_interval,
             next_sync_deadline: Instant::now() + Duration::from_secs(safe_interval),
+            sync_state: SyncStateSnapshot::load(&config.state_file),
         }
     }
 
@@ -96,6 +92,7 @@ impl<'a> RepoManager<'a> {
         while self.next_sync_deadline <= now {
             self.next_sync_deadline += Duration::from_secs(self.sync_interval);
         }
+        self.sync_state = SyncStateSnapshot::load(&self.config.state_file);
     }
 
     fn seconds_until_next_sync(&self) -> u64 {
@@ -107,7 +104,32 @@ impl<'a> RepoManager<'a> {
     fn build_count(&self) -> usize {
         self.repos
             .iter()
-            .filter(|repo| repo.deploy_target.as_ref().is_some_and(|target| !target.is_empty()))
+            .filter(|repo| {
+                repo.deploy_target
+                    .as_ref()
+                    .is_some_and(|target| !target.is_empty())
+            })
+            .count()
+    }
+
+    fn selected_repo(&self) -> Option<&RepoDefinition> {
+        let selected = self.list_state.selected()?;
+        self.repos.get(selected)
+    }
+
+    fn selected_repo_state(&self) -> Option<&RepoSyncState> {
+        let repo = self.selected_repo()?;
+        self.sync_state.get(&repo.repo_path)
+    }
+
+    fn error_count(&self) -> usize {
+        self.repos
+            .iter()
+            .filter(|repo| {
+                self.sync_state
+                    .get(&repo.repo_path)
+                    .is_some_and(repo_has_active_error)
+            })
             .count()
     }
 
@@ -410,11 +432,19 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
 
     let remaining = manager.seconds_until_next_sync();
     let header = Paragraph::new(Line::from(vec![
-        Span::styled(" Git Sync ", Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " Git Sync ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw("  |  "),
         Span::styled(
             format!("Modo: {}", manager.mode_hint()),
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::raw("  |  "),
         Span::styled(
@@ -435,6 +465,7 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         .constraints([Constraint::Percentage(70), Constraint::Percentage(30)].as_ref())
         .split(chunks[1]);
 
+    let now_ts = Local::now().timestamp();
     let items: Vec<ListItem> = if manager.repos.is_empty() {
         vec![ListItem::new(Line::from(vec![Span::styled(
             "No hay repositorios configurados",
@@ -447,18 +478,44 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
             .enumerate()
             .map(|(i, repo)| {
                 let base_style = Style::default().fg(Color::White);
-                let label = match &repo.deploy_target {
-                    Some(target) if !target.is_empty() => {
-                        Line::from(vec![
-                            Span::styled(format!("{:>2}. ", i + 1), Style::default().fg(Color::DarkGray)),
-                            Span::styled("BUILD ", Style::default().fg(Color::Black).bg(Color::Green)),
-                            Span::styled(format!(" {} -> {}", repo.repo_path, target), base_style),
-                        ])
+                let state = manager.sync_state.get(&repo.repo_path);
+                let (status_label, status_style) = match state {
+                    Some(repo_state) if repo_has_active_error(repo_state) => {
+                        (" ERROR ", Style::default().fg(Color::White).bg(Color::Red))
                     }
+                    Some(_) => (" OK ", Style::default().fg(Color::Black).bg(Color::Green)),
+                    None => (
+                        " SIN DATOS ",
+                        Style::default().fg(Color::Black).bg(Color::DarkGray),
+                    ),
+                };
+                let last_sync_label = state
+                    .and_then(|s| s.last_success_ts)
+                    .map(|ts| format!("hace {}", humanize_elapsed(now_ts.saturating_sub(ts))))
+                    .unwrap_or_else(|| "sin registros".to_string());
+
+                let label = match &repo.deploy_target {
+                    Some(target) if !target.is_empty() => Line::from(vec![
+                        Span::styled(
+                            format!("{:>2}. ", i + 1),
+                            Style::default().fg(Color::DarkGray),
+                        ),
+                        Span::styled("BUILD ", Style::default().fg(Color::Black).bg(Color::Green)),
+                        Span::styled(format!(" {} -> {}", repo.repo_path, target), base_style),
+                        Span::raw("  | "),
+                        Span::styled(status_label, status_style),
+                        Span::raw(format!("  |  Últ. sync: {}", last_sync_label)),
+                    ]),
                     _ => Line::from(vec![
-                        Span::styled(format!("{:>2}. ", i + 1), Style::default().fg(Color::DarkGray)),
+                        Span::styled(
+                            format!("{:>2}. ", i + 1),
+                            Style::default().fg(Color::DarkGray),
+                        ),
                         Span::styled("SYNC ", Style::default().fg(Color::Black).bg(Color::Blue)),
                         Span::styled(format!(" {}", repo.repo_path), base_style),
+                        Span::raw("  | "),
+                        Span::styled(status_label, status_style),
+                        Span::raw(format!("  |  Últ. sync: {}", last_sync_label)),
                     ]),
                 };
                 ListItem::new(label)
@@ -482,22 +539,63 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
 
     let build_count = manager.build_count();
     let sync_only_count = manager.repos.len().saturating_sub(build_count);
+    let error_count = manager.error_count();
+    let selected_state = manager.selected_repo_state();
+    let selected_last_sync = selected_state
+        .and_then(|state| state.last_success_ts)
+        .map(|ts| format!("hace {}", humanize_elapsed(now_ts.saturating_sub(ts))))
+        .unwrap_or_else(|| "sin registros".to_string());
+    let selected_last_attempt = selected_state
+        .and_then(|state| state.last_attempt_ts)
+        .map(|ts| format!("hace {}", humanize_elapsed(now_ts.saturating_sub(ts))))
+        .unwrap_or_else(|| "sin intentos".to_string());
+    let selected_status = match selected_state {
+        Some(state) if repo_has_active_error(state) => "Error en último intento",
+        Some(_) => "Correcto",
+        None => "Sin datos",
+    };
+    let selected_error = selected_state
+        .and_then(|state| state.last_error.clone())
+        .map(|err| truncate_message(&err, 72))
+        .unwrap_or_else(|| "-".to_string());
+    let selected_result = selected_state
+        .and_then(|state| state.last_result.clone())
+        .map(|result| truncate_message(&result, 72))
+        .unwrap_or_else(|| "-".to_string());
+
     let panel_lines = vec![
         Line::from(vec![Span::styled(
             "Resumen",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         )]),
         Line::from(format!("Total: {}", manager.repos.len())),
         Line::from(format!("Con build: {}", build_count)),
         Line::from(format!("Solo sync: {}", sync_only_count)),
+        Line::from(format!("Con error: {}", error_count)),
         Line::from(""),
         Line::from(vec![Span::styled(
             "Daemon",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         )]),
         Line::from(format!("Intervalo: {}s", manager.sync_interval)),
         Line::from(format!("Próximo ciclo: {}s", remaining)),
         Line::from(format!("Fecha: {}", Local::now().format("%Y-%m-%d"))),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Seleccionado",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(format!("Estado: {}", selected_status)),
+        Line::from(format!("Último resultado: {}", selected_result)),
+        Line::from(format!("Último sync OK: {}", selected_last_sync)),
+        Line::from(format!("Último intento: {}", selected_last_attempt)),
+        Line::from(format!("Último error: {}", selected_error)),
     ];
     let panel = Paragraph::new(panel_lines)
         .style(Style::default().fg(Color::White))
@@ -550,32 +648,118 @@ fn draw_ui(frame: &mut Frame, manager: &mut RepoManager) {
         );
     }
 
-    let (status_text, status_color) = manager
-        .message
-        .clone()
-        .unwrap_or(("Listo para editar repositorios".to_string(), Color::DarkGray));
+    let (status_text, status_color) = manager.message.clone().unwrap_or((
+        "Listo para editar repositorios".to_string(),
+        Color::DarkGray,
+    ));
     let status = Paragraph::new(status_text)
         .style(Style::default().fg(status_color))
         .block(Block::default().borders(Borders::ALL).title("Estado"));
     frame.render_widget(status, chunks[3]);
 
     let shortcuts = Paragraph::new(Line::from(vec![
-        Span::styled(" ↑/↓ ", Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " ↑/↓ ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" mover  "),
-        Span::styled(" A ", Style::default().fg(Color::Black).bg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " A ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" añadir  "),
-        Span::styled(" E/Enter ", Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " E/Enter ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" editar  "),
-        Span::styled(" D ", Style::default().fg(Color::White).bg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " D ",
+            Style::default()
+                .fg(Color::White)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" eliminar  "),
-        Span::styled(" Esc ", Style::default().fg(Color::Black).bg(Color::Gray).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " Esc ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Gray)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" cancelar  "),
-        Span::styled(" Q ", Style::default().fg(Color::Black).bg(Color::Magenta).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " Q ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" salir  "),
-        Span::styled(" Ctrl+C ", Style::default().fg(Color::Black).bg(Color::Blue).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " Ctrl+C ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" salir"),
     ]))
     .style(Style::default().fg(Color::White))
     .block(Block::default().borders(Borders::ALL).title("Atajos"));
     frame.render_widget(shortcuts, chunks[4]);
+}
+
+fn repo_has_active_error(state: &RepoSyncState) -> bool {
+    match (state.last_error_ts, state.last_success_ts) {
+        (Some(error_ts), Some(success_ts)) => error_ts > success_ts,
+        (Some(_), None) => true,
+        _ => false,
+    }
+}
+
+fn humanize_elapsed(seconds: i64) -> String {
+    if seconds <= 1 {
+        return "1s".to_string();
+    }
+
+    if seconds < 60 {
+        return format!("{}s", seconds);
+    }
+
+    let minutes = seconds / 60;
+    if minutes < 60 {
+        return format!("{}m", minutes);
+    }
+
+    let hours = minutes / 60;
+    if hours < 24 {
+        return format!("{}h", hours);
+    }
+
+    let days = hours / 24;
+    format!("{}d", days)
+}
+
+fn truncate_message(message: &str, max_chars: usize) -> String {
+    let mut out = String::new();
+    for (count, ch) in message.chars().enumerate() {
+        if count >= max_chars {
+            out.push('…');
+            return out;
+        }
+        out.push(ch);
+    }
+
+    out
 }
