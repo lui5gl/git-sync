@@ -310,22 +310,18 @@ impl<'a> RepoManager<'a> {
             return Ok(());
         }
 
+        let mut enabled = true;
         if let Some(repo) = self.repos.get_mut(index) {
             repo.enabled = !repo.enabled;
-            let label = if repo.enabled {
-                "Sync activado para el repositorio"
-            } else {
-                "Sync desactivado para el repositorio"
-            };
-            self.set_message(
-                label,
-                if repo.enabled {
-                    Color::Green
-                } else {
-                    Color::Yellow
-                },
-            );
+            enabled = repo.enabled;
         }
+
+        let label = if enabled {
+            "Sync activado para el repositorio"
+        } else {
+            "Sync desactivado para el repositorio"
+        };
+        self.set_message(label, if enabled { Color::Green } else { Color::Yellow });
 
         self.persist()?;
         if self.details_open {
